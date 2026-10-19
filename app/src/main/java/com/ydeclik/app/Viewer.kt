@@ -275,16 +275,28 @@ fun PdfViewer(
 
 fun fmtClock(sec: Int): String = "%02d:%02d".format(sec / 60, sec % 60)
 
-/** Vibration + bip quand le temps d'un exercice est écoulé. */
-fun alertTimeUp(ctx: Context) {
+/**
+ * Fin du minuteur : vibration + sonnerie du téléphone (celle choisie dans les réglages, sinon l'alarme par défaut).
+ * La sonnerie est jouée sur le canal « alarme », donc plus forte et indépendante du volume du métronome.
+ */
+fun alertTimeUp(ctx: Context, uri: String? = null) {
     runCatching {
         ctx.getSystemService(Vibrator::class.java)
-            ?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 300, 150, 300, 150, 300), -1))
+            ?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 400, 200, 400, 200, 400), -1))
     }
     runCatching {
-        val tg = ToneGenerator(AudioManager.STREAM_MUSIC, 90)
-        tg.startTone(ToneGenerator.TONE_PROP_ACK, 700)
-        Handler(Looper.getMainLooper()).postDelayed({ tg.release() }, 1200)
+        val u = uri?.let { Uri.parse(it) }
+            ?: android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_ALARM)
+            ?: android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE)
+        val r = android.media.RingtoneManager.getRingtone(ctx, u)
+        r.setAudioAttributes(
+            android.media.AudioAttributes.Builder()
+                .setUsage(android.media.AudioAttributes.USAGE_ALARM)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+        )
+        r.play()
+        Handler(Looper.getMainLooper()).postDelayed({ runCatching { r.stop() } }, 7000)
     }
 }
 
