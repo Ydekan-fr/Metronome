@@ -86,7 +86,7 @@ class MetronomeViewModel(private val app: Application) : AndroidViewModel(app) {
                 }
             }
         }
-        pan = prefs.getFloat("pan", 0f)
+        pan = 0f   // la balance gauche/droite a été retirée
         lightEnabled = prefs.getBoolean("light", true)
         currentSlot = prefs.getInt("slot", 0).coerceIn(0, 8)
         prefs.getString("sound", null)?.let { n ->

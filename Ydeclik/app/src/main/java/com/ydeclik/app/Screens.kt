@@ -74,12 +74,11 @@ fun YdeclikApp(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: SetlistViewMod
 
     BackHandler(enabled = ex.stack.size > 1) { ex.back() }
     BackHandler(enabled = ex.immersive) { ex.immersive = false }
-    var showSettings by remember { mutableStateOf(false) }
 
     Surface(color = Bg, modifier = Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().safeDrawingPadding()) {
             when (ex.screen) {
-                Screen.METRONOME -> MetronomeScreen(vm, ex) { showSettings = true }
+                Screen.METRONOME -> MetronomeScreen(vm, ex)
                 Screen.EXERCISES -> ExercisesScreen(ex)
                 Screen.ROUTINES -> RoutinesScreen(ex)
                 Screen.ROUTINE_EDIT -> RoutineEditScreen(ex)
@@ -91,11 +90,11 @@ fun YdeclikApp(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: SetlistViewMod
             }
         }
     }
-    if (showSettings) SettingsDialog(vm) { showSettings = false }
+    if (ex.settingsOpen) SettingsDialog(vm) { ex.settingsOpen = false }
 }
 
 @Composable
-fun MetronomeScreen(vm: MetronomeViewModel, ex: ExerciseViewModel, onSettings: () -> Unit) {
+fun MetronomeScreen(vm: MetronomeViewModel, ex: ExerciseViewModel) {
     Column(
         Modifier
             .fillMaxSize()
@@ -110,7 +109,7 @@ fun MetronomeScreen(vm: MetronomeViewModel, ex: ExerciseViewModel, onSettings: (
         BeatsRow(vm)
         AutoPanel(vm)
         PresetsRow(vm)
-        Transport(vm, onSettings)
+        Transport(vm)
     }
 }
 

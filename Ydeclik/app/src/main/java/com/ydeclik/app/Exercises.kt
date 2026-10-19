@@ -19,6 +19,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -115,6 +117,15 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
     /** Minuteur global (minutes, 0 = aucun), commun aux exercices et aux routines. */
     var timerMin by mutableIntStateOf(0); private set
 
+    // Le minuteur est indépendant du métronome et des écrans : comme un minuteur tiers du téléphone.
+    var timerRemaining by mutableIntStateOf(0); private set
+    var timerRunning by mutableStateOf(false); private set
+    var timerFinished by mutableStateOf(false); private set
+    private var timerJob: Job? = null
+
+    /** Affiche la boîte de réglages (accessible depuis le menu). */
+    var settingsOpen by mutableStateOf(false)
+
     var viewerItems by mutableStateOf(emptyList<Exercise>()); private set
     var viewerMinutes by mutableStateOf(emptyList<Int>()); private set
     var viewerAutoAdvance by mutableStateOf(false); private set
@@ -195,6 +206,7 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
             }
             autoApplyBpm = prefs.getBoolean("autoApply", true)
             timerMin = prefs.getInt("timerMin", 0)
+            timerRemaining = timerMin * 60
             folderUri = prefs.getString("folderUri", null)
             folderName = prefs.getString("folderName", "") ?: ""
             sortMode = SortMode.valueOf(prefs.getString("sort", "NAME") ?: "NAME")
@@ -282,6 +294,46 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
     fun updateTimer(min: Int) {
         timerMin = min.coerceIn(0, 600)
         prefs.edit().putInt("timerMin", timerMin).apply()
+        timerReset()
+    }
+
+    fun timerReset() {
+        timerJob?.cancel()
+        timerRunning = false
+        timerFinished = false
+        timerRemaining = timerMin * 60
+    }
+
+    private fun timerStart() {
+        if (timerMin <= 0) return
+        if (timerFinished || timerRemaining <= 0) { timerFinished = false; timerRemaining = timerMin * 60 }
+        timerJob?.cancel()
+        timerRunning = true
+        val endAt = SystemClock.elapsedRealtime() + timerRemaining * 1000L
+        timerJob = viewModelScope.launch {
+            while (isActive) {
+                delay(200)
+                val left = endAt - SystemClock.elapsedRealtime()
+                timerRemaining = ((left + 999) / 1000).toInt().coerceAtLeast(0)
+                if (left <= 0) {
+                    timerRunning = false
+                    timerFinished = true
+                    alertTimeUp(app)
+                    break
+                }
+            }
+        }
+    }
+
+    fun timerToggle() {
+        if (timerRunning) { timerJob?.cancel(); timerRunning = false } else timerStart()
+    }
+
+    /** Relance depuis le début ; reste en marche si le minuteur tournait (mode routine : nouvel exercice). */
+    fun timerRestart() {
+        val was = timerRunning
+        timerReset()
+        if (was) timerStart()
     }
 
     fun updateAutoApply(v: Boolean) {

@@ -15,6 +15,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -24,6 +26,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -36,7 +39,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -51,62 +58,117 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 import kotlin.math.min
 
-// ------------------------------------------------------------------ zoom commun (images et PDF)
+// ------------------------------------------------------------------ zoom fluide (images et PDF)
 
 /**
- * Conteneur zoomable : pincer avec deux doigts change le niveau de zoom (1×, 1,5×, 2×, 3×) ;
- * un double toucher appelle [onDoubleTap] (plein écran). Le contenu reçoit la largeur visible et le zoom.
+ * Image zoomable. Le zoom et le déplacement passent par une transformation graphique (GPU) :
+ * aucun recalcul de mise en page pendant le pincement, donc un mouvement continu.
+ * - [fitWidth] vrai : l'image occupe la largeur (défilement vertical si elle est plus haute que l'écran) ;
+ *   faux : la page entière tient à l'écran.
+ * - Pincer = zoom ; un doigt = déplacement quand c'est utile ; double toucher = [onDoubleTap].
+ * - [onSettled] est appelé quand le zoom s'est stabilisé (pour recalculer une image plus nette).
  */
 @Composable
-fun ZoomPane(
+fun ZoomImage(
+    bitmap: Bitmap,
+    stateKey: Any,
+    fitWidth: Boolean,
     onDoubleTap: () -> Unit,
     onZoomed: (Boolean) -> Unit,
-    content: @Composable (Dp, Float) -> Unit
+    onSettled: (Float) -> Unit = {}
 ) {
-    val steps = remember { listOf(1f, 1.5f, 2f, 3f) }
-    var stepIdx by remember { mutableIntStateOf(0) }
-    val zoom = steps[stepIdx]
-    val hScroll = rememberScrollState()
     val curDouble by rememberUpdatedState(onDoubleTap)
     val curZoomed by rememberUpdatedState(onZoomed)
-
-    LaunchedEffect(stepIdx) {
-        curZoomed(stepIdx > 0)
-        if (stepIdx == 0) hScroll.scrollTo(0)
-    }
+    val curSettled by rememberUpdatedState(onSettled)
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF0E0E10)).clipToBounds()) {
-        val viewW = maxWidth
+        val vw = constraints.maxWidth.toFloat()
+        val vh = constraints.maxHeight.toFloat()
+        val aspect = bitmap.height.toFloat() / bitmap.width.toFloat()
+        val baseW = if (fitWidth) vw else min(vw, vh / aspect)
+        val baseH = baseW * aspect
+
+        var zoom by remember(stateKey) { mutableFloatStateOf(1f) }
+        var ox by remember(stateKey) { mutableFloatStateOf(0f) }
+        var oy by remember(stateKey) { mutableFloatStateOf(0f) }
+        val geo by rememberUpdatedState(floatArrayOf(vw, vh, baseW, baseH))
+
+        fun clampAxis(o: Float, content: Float, view: Float): Float =
+            if (content <= view) (view - content) / 2f else o.coerceIn(view - content, 0f)
+
+        LaunchedEffect(zoom > 1.01f) { curZoomed(zoom > 1.01f) }
+        LaunchedEffect(zoom) {
+            delay(300)
+            curSettled(zoom)
+        }
+
         Box(
             Modifier
                 .fillMaxSize()
-                // Le pincement à deux doigts est traité en premier (passe Initial) pour que les listes ne défilent pas.
                 .pointerInput(Unit) {
                     awaitEachGesture {
-                        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                        var acc = 1f
+                        awaitFirstDown(requireUnconsumed = false)
+                        val slop = viewConfiguration.touchSlop
+                        var handling = false
+                        var zoomAcc = 1f
+                        var panAcc = Offset.Zero
                         do {
-                            val ev = awaitPointerEvent(PointerEventPass.Initial)
-                            if (ev.changes.size >= 2) {
-                                acc *= ev.calculateZoom()
-                                if (acc > 1.25f && stepIdx < steps.lastIndex) { stepIdx++; acc = 1f }
-                                else if (acc < 0.8f && stepIdx > 0) { stepIdx--; acc = 1f }
-                                ev.changes.forEach { it.consume() }
+                            val ev = awaitPointerEvent()
+                            if (ev.changes.any { it.isConsumed }) break
+                            val g = geo
+                            val zc = ev.calculateZoom()
+                            val pan = ev.calculatePan()
+                            val cen = ev.calculateCentroid(useCurrent = true)
+                            val pressed = ev.changes.count { it.pressed }
+                            if (!handling) {
+                                zoomAcc *= zc
+                                panAcc += pan
+                                if (pressed >= 2) {
+                                    if (abs(1f - zoomAcc) > 0.02f || panAcc.getDistance() > slop) handling = true
+                                } else if (panAcc.getDistance() > slop) {
+                                    val canX = g[2] * zoom > g[0] + 1f
+                                    val canY = g[3] * zoom > g[1] + 1f
+                                    val horizontal = abs(panAcc.x) > abs(panAcc.y)
+                                    if ((horizontal && canX) || (!horizontal && canY)) handling = true else break
+                                }
+                            }
+                            if (handling) {
+                                val nz = (zoom * zc).coerceIn(1f, 4f)
+                                val r = nz / zoom
+                                val nx = cen.x - (cen.x - ox) * r + pan.x
+                                val ny = cen.y - (cen.y - oy) * r + pan.y
+                                zoom = nz
+                                ox = clampAxis(nx, g[2] * nz, g[0])
+                                oy = clampAxis(ny, g[3] * nz, g[1])
+                                ev.changes.forEach { if (it.positionChanged()) it.consume() }
                             }
                         } while (ev.changes.any { it.pressed })
+                        if (zoom > 1f && zoom < 1.05f) { zoom = 1f; ox = 0f; oy = 0f }
                     }
                 }
                 .pointerInput(Unit) { detectTapGestures(onDoubleTap = { curDouble() }) }
-                .then(if (zoom > 1f) Modifier.horizontalScroll(hScroll) else Modifier)
         ) {
-            content(viewW, zoom)
+            Image(
+                bitmap.asImageBitmap(), null,
+                Modifier
+                    .size(with(LocalDensity.current) { baseW.toDp() }, with(LocalDensity.current) { baseH.toDp() })
+                    .graphicsLayer {
+                        transformOrigin = TransformOrigin(0f, 0f)
+                        scaleX = zoom
+                        scaleY = zoom
+                        translationX = clampAxis(ox, baseW * zoom, vw)
+                        translationY = clampAxis(oy, baseH * zoom, vh)
+                    },
+                contentScale = ContentScale.FillBounds
+            )
         }
     }
 }
 
-// ------------------------------------------------------------------ image (défilement vertical + zoom)
+// ------------------------------------------------------------------ image
 
 @Composable
 fun ImageViewer(uri: String, onDoubleTap: () -> Unit, onZoomed: (Boolean) -> Unit) {
@@ -124,33 +186,41 @@ fun ImageViewer(uri: String, onDoubleTap: () -> Unit, onZoomed: (Boolean) -> Uni
         b == null -> Box(Modifier.fillMaxSize().background(Color(0xFF0E0E10)), contentAlignment = Alignment.Center) {
             Text("Impossible d'ouvrir ce fichier", color = Color.White.copy(alpha = 0.5f))
         }
-        else -> ZoomPane(onDoubleTap, onZoomed) { viewW, zoom ->
-            // L'image occupe toute la largeur ; si elle est plus haute que l'écran, on la fait défiler.
-            Box(
-                Modifier
-                    .width(viewW * zoom)
-                    .fillMaxHeight()
-                    .verticalScroll(rememberScrollState()),
-                contentAlignment = Alignment.TopCenter
-            ) {
-                Image(b.asImageBitmap(), null, Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
-            }
-        }
+        else -> ZoomImage(b, uri, fitWidth = true, onDoubleTap = onDoubleTap, onZoomed = onZoomed)
     }
 }
 
-// ------------------------------------------------------------------ PDF (défilement, zoom, page courante)
+// ------------------------------------------------------------------ PDF : une page entière à la fois
 
 @Composable
-fun PdfPage(doc: PdfDoc, index: Int, widthPx: Int) {
-    val bmp by produceState<Bitmap?>(null, doc, index, widthPx) {
-        value = withContext(Dispatchers.IO) { runCatching { doc.render(index, widthPx) }.getOrNull() }
-    }
-    val b = bmp
-    if (b != null) {
-        Image(b.asImageBitmap(), null, Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
-    } else {
-        Box(Modifier.fillMaxWidth().height(400.dp).background(Color.White.copy(alpha = 0.05f)))
+private fun PdfFitPage(
+    doc: PdfDoc,
+    index: Int,
+    onDoubleTap: () -> Unit,
+    onZoomed: (Boolean) -> Unit
+) {
+    var settled by remember(index) { mutableFloatStateOf(1f) }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val mult = when {
+            settled <= 1.2f -> 1
+            settled <= 2.2f -> 2
+            else -> 3
+        }
+        val renderW = min(constraints.maxWidth * mult, 2400)
+        // On garde l'ancienne image à l'écran tant que la version plus nette n'est pas prête.
+        val bmp by produceState<Bitmap?>(null, doc, index, renderW) {
+            val r = withContext(Dispatchers.IO) { runCatching { doc.render(index, renderW) }.getOrNull() }
+            if (r != null) value = r
+        }
+        val b = bmp
+        if (b == null) {
+            Box(Modifier.fillMaxSize().background(Color(0xFF0E0E10)), contentAlignment = Alignment.Center) {
+                Text("Chargement…", color = Color.White.copy(alpha = 0.5f))
+            }
+        } else {
+            ZoomImage(b, index, fitWidth = false, onDoubleTap = onDoubleTap, onZoomed = onZoomed,
+                onSettled = { settled = it })
+        }
     }
 }
 
@@ -170,33 +240,27 @@ fun PdfViewer(
     }
     val doc = docState.value
     val curOnPage by rememberUpdatedState(onPage)
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = startPage.coerceAtLeast(0))
-
-    // Page courante = celle qui occupe le centre de l'écran.
-    LaunchedEffect(listState) {
-        snapshotFlow {
-            val info = listState.layoutInfo
-            val center = (info.viewportStartOffset + info.viewportEndOffset) / 2
-            info.visibleItemsInfo.firstOrNull { center >= it.offset && center < it.offset + it.size }?.index
-        }.collect { idx -> if (idx != null) curOnPage(idx) }
-    }
+    val curZoomed by rememberUpdatedState(onZoomed)
 
     if (doc == null) {
         Box(Modifier.fillMaxSize().background(Color(0xFF0E0E10)), contentAlignment = Alignment.Center) {
             Text("Chargement…", color = Color.White.copy(alpha = 0.5f))
         }
     } else {
-        ZoomPane(onDoubleTap, onZoomed) { viewW, zoom ->
-            val density = LocalDensity.current
-            val viewPx = with(density) { viewW.roundToPx() }
-            // Les pages sont rendues à la taille du zoom pour que le texte reste net.
-            val widthPx = min((viewPx * zoom).toInt(), 2400)
-            LazyColumn(
-                Modifier.width(viewW * zoom).fillMaxHeight(),
-                state = listState,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(doc.pageCount) { i -> PdfPage(doc, i, widthPx) }
+        val pager = rememberPagerState(initialPage = startPage.coerceIn(0, (doc.pageCount - 1).coerceAtLeast(0))) {
+            doc.pageCount
+        }
+        var zoomed by remember { mutableStateOf(false) }
+        LaunchedEffect(pager.currentPage) { curOnPage(pager.currentPage) }
+        // Une seule page à l'écran : on tourne les pages en balayant verticalement (désactivé pendant le zoom).
+        VerticalPager(
+            state = pager,
+            modifier = Modifier.fillMaxSize(),
+            userScrollEnabled = !zoomed && doc.pageCount > 1,
+            key = { it }
+        ) { i ->
+            PdfFitPage(doc, i, onDoubleTap) { z ->
+                if (i == pager.currentPage) { zoomed = z; curZoomed(z) }
             }
         }
     }
@@ -332,11 +396,7 @@ fun ViewerScreen(vm: MetronomeViewModel, ex: ExerciseViewModel) {
     val key = statKey(cur.uri, pdfPage)
     val stats = ex.stats[key]
 
-    // Minuteur global : il ne décompte que si le métronome joue et ne se remet pas à zéro en changeant d'exercice.
-    var remaining by remember(ex.timerMin) { mutableIntStateOf(ex.timerMin * 60) }
-    var finished by remember(ex.timerMin) { mutableStateOf(false) }
     var showTimer by remember { mutableStateOf(false) }
-
     // Nouvel exercice affiché : on note la date d'ouverture.
     LaunchedEffect(page) {
         zoomed = false
@@ -356,17 +416,6 @@ fun ViewerScreen(vm: MetronomeViewModel, ex: ExerciseViewModel) {
     LaunchedEffect(page, pdfPage) {
         if (cur.isPdf) ex.setLastPage(cur.uri, pdfPage)
     }
-    // Décompte.
-    LaunchedEffect(vm.isPlaying, ex.timerMin, finished) {
-        if (!vm.isPlaying || ex.timerMin <= 0 || finished) return@LaunchedEffect
-        while (remaining > 0) {
-            delay(1000)
-            remaining--
-        }
-        finished = true
-        alertTimeUp(ctx)
-    }
-
     val immersive = ex.immersive
 
     Column(Modifier.fillMaxSize()) {
@@ -390,28 +439,26 @@ fun ViewerScreen(vm: MetronomeViewModel, ex: ExerciseViewModel) {
                         )
                     }
                 }
+                // Minuteur indépendant du métronome : toucher = démarrer / mettre en pause, ↺ = remise à zéro, ✎ = durée.
                 Text(
-                    if (ex.timerMin > 0) "⏱ ${fmtClock(remaining)}" + (if (finished) " ✓" else "") else "⏱ —",
+                    if (ex.timerMin > 0) (if (ex.timerRunning) "⏸ " else "⏱ ") + fmtClock(ex.timerRemaining) +
+                        (if (ex.timerFinished) " ✓" else "") else "⏱ —",
                     fontWeight = FontWeight.Bold, fontSize = 15.sp,
                     color = when {
-                        finished -> Color(0xFFFF453A)
-                        vm.isPlaying && ex.timerMin > 0 -> Orange
+                        ex.timerFinished -> Color(0xFFFF453A)
+                        ex.timerRunning -> Orange
                         else -> Color.White
                     },
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .background(Color.White.copy(alpha = 0.1f))
-                        .clickable { showTimer = true }
+                        .clickable { if (ex.timerMin > 0) ex.timerToggle() else showTimer = true }
                         .padding(horizontal = 10.dp, vertical = 6.dp)
                 )
                 if (ex.timerMin > 0) {
-                    Text(
-                        "↺", fontSize = 20.sp,
-                        modifier = Modifier
-                            .clickable { remaining = ex.timerMin * 60; finished = false }
-                            .padding(8.dp)
-                    )
+                    Text("↺", fontSize = 20.sp, modifier = Modifier.clickable { ex.timerReset() }.padding(6.dp))
                 }
+                Text("✎", fontSize = 18.sp, modifier = Modifier.clickable { showTimer = true }.padding(6.dp))
                 if (items.size > 1) {
                     Text(
                         "${page + 1} / ${items.size}", fontWeight = FontWeight.Bold, color = Orange,
@@ -507,19 +554,37 @@ fun RoutineEditScreen(ex: ExerciseViewModel) {
         if (r.items.isEmpty()) {
             Text("Cette routine est vide.", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
         }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxSize()) {
-            itemsIndexed(r.items) { idx, ri ->
+        val drag = rememberDragReorderState()
+        val rowH = 68.dp
+        val rowGap = 6.dp
+        val rowPx = with(LocalDensity.current) { (rowH + rowGap).toPx() }
+        // Clés stables (un même fichier peut apparaître plusieurs fois dans la routine).
+        val keys = remember(r.items) {
+            val seen = HashMap<String, Int>()
+            r.items.map { val n = seen[it.uri] ?: 0; seen[it.uri] = n + 1; "${it.uri}#$n" }
+        }
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(rowGap), modifier = Modifier.fillMaxSize()) {
+            itemsIndexed(r.items, key = { i, _ -> keys[i] }) { idx, ri ->
                 val e = lib.firstOrNull { it.uri == ri.uri }
+                val k = keys[idx]
                 Row(
                     Modifier
+                        .then(reorderItem(drag, k))
                         .fillMaxWidth()
+                        .height(rowH)
                         .clip(RoundedCornerShape(10.dp))
                         .background(Color.White.copy(alpha = 0.06f))
-                        .padding(8.dp),
+                        .padding(horizontal = 4.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text("${idx + 1}", Modifier.width(20.dp), color = Orange, fontWeight = FontWeight.Bold)
+                    Box(
+                        Modifier
+                            .size(40.dp)
+                            .reorderHandle(drag, k, rowPx, idx, r.items.lastIndex) { f, t -> ex.moveInRoutine(r.id, f, t - f) },
+                        contentAlignment = Alignment.Center
+                    ) { Text("≡", fontSize = 26.sp, color = Color.White.copy(alpha = 0.7f)) }
+                    Text("${idx + 1}", Modifier.width(18.dp), color = Orange, fontWeight = FontWeight.Bold)
                     if (e != null) Thumb(e, Modifier.size(width = 40.dp, height = 52.dp).clip(RoundedCornerShape(6.dp)))
                     else Box(Modifier.size(width = 40.dp, height = 52.dp))
                     Column(Modifier.weight(1f)) {
@@ -531,9 +596,7 @@ fun RoutineEditScreen(ex: ExerciseViewModel) {
                         val last = e?.let { ex.fileStats(it.uri)?.lastBpm }
                         if (last != null) Text("Dernier : $last BPM", fontSize = 11.sp, color = Orange)
                     }
-                    Text("↑", fontSize = 20.sp, modifier = Modifier.clickable { ex.moveInRoutine(r.id, idx, -1) }.padding(6.dp))
-                    Text("↓", fontSize = 20.sp, modifier = Modifier.clickable { ex.moveInRoutine(r.id, idx, 1) }.padding(6.dp))
-                    Text("✕", fontSize = 18.sp, modifier = Modifier.clickable { ex.removeFromRoutine(r.id, idx) }.padding(6.dp))
+                    Text("✕", fontSize = 18.sp, modifier = Modifier.clickable { ex.removeFromRoutine(r.id, idx) }.padding(8.dp))
                 }
             }
         }

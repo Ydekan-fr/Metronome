@@ -282,6 +282,7 @@ fun SetlistEditScreen(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: Setlist
             Pill("+ Preset vide") { sl.addPreset(SPreset.blank("Preset ${s.presets.size + 1}")) }
         }
 
+        val drag = rememberDragReorderState()
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(ROW_GAP),
             modifier = Modifier.weight(1f).fillMaxWidth()
@@ -296,6 +297,7 @@ fun SetlistEditScreen(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: Setlist
 
                 Column(
                     Modifier
+                        .then(reorderItem(drag, p.id))
                         .fillMaxWidth()
                         .height(ROW_H)
                         .clip(RoundedCornerShape(12.dp))
@@ -310,21 +312,7 @@ fun SetlistEditScreen(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: Setlist
                         Box(
                             Modifier
                                 .size(40.dp)
-                                .pointerInput(p.id) {
-                                    var acc = 0f
-                                    detectDragGestures(
-                                        onDragStart = { acc = 0f },
-                                        onDrag = { change, d ->
-                                            change.consume()
-                                            acc += d.y
-                                            if (acc > rowPx * 0.5f && idxState < lastIdx) {
-                                                sl.movePreset(idxState, idxState + 1); acc -= rowPx
-                                            } else if (acc < -rowPx * 0.5f && idxState > 0) {
-                                                sl.movePreset(idxState, idxState - 1); acc += rowPx
-                                            }
-                                        }
-                                    )
-                                },
+                                .reorderHandle(drag, p.id, rowPx, idx, s.presets.lastIndex) { f, t -> sl.movePreset(f, t) },
                             contentAlignment = Alignment.Center
                         ) { Text("≡", fontSize = 26.sp, color = Color.White.copy(alpha = 0.7f)) }
                         Text(

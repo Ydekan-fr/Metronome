@@ -477,7 +477,7 @@ fun PresetsRow(vm: MetronomeViewModel) {
 }
 
 @Composable
-fun Transport(vm: MetronomeViewModel, onSettings: () -> Unit) {
+fun Transport(vm: MetronomeViewModel) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Spacer(Modifier.weight(1f))
         Box(
@@ -490,12 +490,7 @@ fun Transport(vm: MetronomeViewModel, onSettings: () -> Unit) {
         ) {
             Text(if (vm.isPlaying) "■" else "▶", fontSize = 30.sp, color = Color.Black)
         }
-        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-            Text(
-                "⚙", fontSize = 26.sp, color = Color.White,
-                modifier = Modifier.clickable(onClick = onSettings).padding(10.dp)
-            )
-        }
+        Spacer(Modifier.weight(1f))
     }
 }
 
@@ -520,11 +515,6 @@ fun <T> PickerRow(label: String, current: String, options: List<Pair<String, T>>
 @Composable
 fun SettingsDialog(vm: MetronomeViewModel, onClose: () -> Unit) {
     LaunchedEffect(Unit) { vm.refreshDevices() }
-    val panLabel = when {
-        abs(vm.pan) < 0.05f -> "C"
-        vm.pan < 0 -> "G${(-vm.pan * 100).toInt()}"
-        else -> "D${(vm.pan * 100).toInt()}"
-    }
     AlertDialog(
         onDismissRequest = onClose,
         confirmButton = { TextButton(onClick = onClose) { Text("Fermer", color = Orange) } },
@@ -535,16 +525,6 @@ fun SettingsDialog(vm: MetronomeViewModel, onClose: () -> Unit) {
                     "Son", vm.sound.label,
                     SoundKind.values().map { it.label to it }
                 ) { vm.setSoundKind(it) }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Balance", Modifier.width(90.dp), fontSize = 14.sp)
-                    Slider(
-                        value = vm.pan, onValueChange = { vm.updatePan(it) }, valueRange = -1f..1f,
-                        colors = SliderDefaults.colors(thumbColor = Orange, activeTrackColor = Orange),
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(panLabel, Modifier.width(36.dp), textAlign = TextAlign.End, fontSize = 13.sp)
-                }
 
                 PickerRow(
                     "Sortie",
