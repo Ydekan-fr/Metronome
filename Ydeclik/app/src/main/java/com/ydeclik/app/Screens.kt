@@ -241,6 +241,8 @@ fun ExercisesScreen(ex: ExerciseViewModel) {
                 }
             }
         }
+        Spacer(Modifier.height(6.dp))
+        TimerPill(ex)
         Row(
             Modifier.fillMaxWidth().padding(vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -273,7 +275,7 @@ fun ExercisesScreen(ex: ExerciseViewModel) {
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(lib, key = { it.uri }) { e ->
-                    ExerciseCard(ex, e, onClick = { ex.openExercise(e) }, onLong = { menuFor = e })
+                    ExerciseCard(ex, e, onClick = { ex.openExercise(e, lib) }, onLong = { menuFor = e })
                 }
             }
         }
@@ -341,7 +343,10 @@ fun RoutinesScreen(ex: ExerciseViewModel) {
     var showNew by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         HeaderBar(ex, "Routines")
-        Row { Pill("+ Nouvelle routine") { showNew = true } }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Pill("+ Nouvelle routine") { showNew = true }
+            TimerPill(ex)
+        }
         if (ex.routines.isEmpty()) {
             Text(
                 "Une routine est une playlist modifiable d'exercices : votre programme d'entraînement.\n" +

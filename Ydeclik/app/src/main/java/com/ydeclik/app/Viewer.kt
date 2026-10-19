@@ -332,10 +332,10 @@ fun ViewerScreen(vm: MetronomeViewModel, ex: ExerciseViewModel) {
     val key = statKey(cur.uri, pdfPage)
     val stats = ex.stats[key]
 
-    // Minuteur de routine (minutes réglées par exercice) : il ne décompte que si le métronome joue.
-    val minutes = ex.viewerMinutes.getOrElse(page) { 0 }
-    var remaining by remember(page) { mutableIntStateOf(minutes * 60) }
-    var finished by remember(page) { mutableStateOf(false) }
+    // Minuteur global : il ne décompte que si le métronome joue et ne se remet pas à zéro en changeant d'exercice.
+    var remaining by remember(ex.timerMin) { mutableIntStateOf(ex.timerMin * 60) }
+    var finished by remember(ex.timerMin) { mutableStateOf(false) }
+    var showTimer by remember { mutableStateOf(false) }
 
     // Nouvel exercice affiché : on note la date d'ouverture.
     LaunchedEffect(page) {
@@ -357,15 +357,14 @@ fun ViewerScreen(vm: MetronomeViewModel, ex: ExerciseViewModel) {
         if (cur.isPdf) ex.setLastPage(cur.uri, pdfPage)
     }
     // Décompte.
-    LaunchedEffect(page, vm.isPlaying) {
-        if (!vm.isPlaying || minutes <= 0 || remaining <= 0) return@LaunchedEffect
+    LaunchedEffect(vm.isPlaying, ex.timerMin, finished) {
+        if (!vm.isPlaying || ex.timerMin <= 0 || finished) return@LaunchedEffect
         while (remaining > 0) {
             delay(1000)
             remaining--
         }
         finished = true
         alertTimeUp(ctx)
-        if (ex.viewerAutoAdvance && page < items.lastIndex) pager.animateScrollToPage(page + 1)
     }
 
     val immersive = ex.immersive
@@ -391,20 +390,26 @@ fun ViewerScreen(vm: MetronomeViewModel, ex: ExerciseViewModel) {
                         )
                     }
                 }
-                if (minutes > 0) {
+                Text(
+                    if (ex.timerMin > 0) "⏱ ${fmtClock(remaining)}" + (if (finished) " ✓" else "") else "⏱ —",
+                    fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                    color = when {
+                        finished -> Color(0xFFFF453A)
+                        vm.isPlaying && ex.timerMin > 0 -> Orange
+                        else -> Color.White
+                    },
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.White.copy(alpha = 0.1f))
+                        .clickable { showTimer = true }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                )
+                if (ex.timerMin > 0) {
                     Text(
-                        "⏱ ${fmtClock(remaining)}" + if (finished) " ✓" else "",
-                        fontWeight = FontWeight.Bold, fontSize = 15.sp,
-                        color = when {
-                            finished -> Color(0xFFFF453A)
-                            vm.isPlaying -> Orange
-                            else -> Color.White
-                        },
+                        "↺", fontSize = 20.sp,
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color.White.copy(alpha = 0.1f))
-                            .clickable { remaining = minutes * 60; finished = false }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                            .clickable { remaining = ex.timerMin * 60; finished = false }
+                            .padding(8.dp)
                     )
                 }
                 if (items.size > 1) {
@@ -442,6 +447,13 @@ fun ViewerScreen(vm: MetronomeViewModel, ex: ExerciseViewModel) {
         }
     }
 
+    if (showTimer) {
+        TextPrompt(
+            "Minuteur global (minutes, 0 = aucun)", ex.timerMin.toString(), numeric = true,
+            onDone = { ex.updateTimer(it.toIntOrNull() ?: 0); showTimer = false },
+            onDismiss = { showTimer = false }
+        )
+    }
     if (showFirst) {
         TextPrompt(
             "BPM de départ", stats?.firstBpm?.toString() ?: vm.cfg.bpm.toString(), numeric = true,
@@ -476,9 +488,7 @@ fun RoutineEditScreen(ex: ExerciseViewModel) {
     var showAdd by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
-    var minutesFor by remember { mutableStateOf<Int?>(null) }
     val lib = ex.library
-    val total = r.items.sumOf { it.minutes }
 
     Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -490,17 +500,9 @@ fun RoutineEditScreen(ex: ExerciseViewModel) {
             Text("🗑", fontSize = 20.sp, modifier = Modifier.clickable { showDelete = true }.padding(8.dp))
             Pill("▶ Lancer", on = true) { ex.openRoutine(r.id) }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Pill("+ Ajouter des exercices") { showAdd = true }
-            Text(
-                if (total > 0) "Total : $total min" else "Pas de minuteur",
-                Modifier.weight(1f).padding(start = 12.dp),
-                fontSize = 13.sp, color = Color.White.copy(alpha = 0.7f)
-            )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Passer à l'exercice suivant quand le minuteur se termine", Modifier.weight(1f), fontSize = 13.sp)
-            Switch(checked = r.autoAdvance, onCheckedChange = { ex.updateAutoAdvance(r.id, it) })
+            TimerPill(ex)
         }
         if (r.items.isEmpty()) {
             Text("Cette routine est vide.", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
@@ -528,14 +530,6 @@ fun RoutineEditScreen(ex: ExerciseViewModel) {
                         )
                         val last = e?.let { ex.fileStats(it.uri)?.lastBpm }
                         if (last != null) Text("Dernier : $last BPM", fontSize = 11.sp, color = Orange)
-                        Text(
-                            "⏱ " + if (ri.minutes > 0) "${ri.minutes} min" else "sans minuteur",
-                            fontSize = 12.sp, color = Color.White.copy(alpha = 0.75f),
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .clickable { minutesFor = idx }
-                                .padding(vertical = 3.dp, horizontal = 2.dp)
-                        )
                     }
                     Text("↑", fontSize = 20.sp, modifier = Modifier.clickable { ex.moveInRoutine(r.id, idx, -1) }.padding(6.dp))
                     Text("↓", fontSize = 20.sp, modifier = Modifier.clickable { ex.moveInRoutine(r.id, idx, 1) }.padding(6.dp))
@@ -545,13 +539,6 @@ fun RoutineEditScreen(ex: ExerciseViewModel) {
         }
     }
 
-    minutesFor?.let { idx ->
-        TextPrompt(
-            "Minuteur en minutes (0 = aucun)", (r.items.getOrNull(idx)?.minutes ?: 0).toString(), numeric = true,
-            onDone = { ex.updateItemMinutes(r.id, idx, it.toIntOrNull() ?: 0); minutesFor = null },
-            onDismiss = { minutesFor = null }
-        )
-    }
     if (showRename) {
         TextPrompt("Renommer la routine", r.name, onDone = { ex.renameRoutine(r.id, it); showRename = false },
             onDismiss = { showRename = false })

@@ -161,3 +161,17 @@ fun UsageScreen(ex: ExerciseViewModel) {
         }
     }
 }
+
+/** Bouton de réglage du minuteur global (utilisé dans Exercices et Routines). */
+@Composable
+fun TimerPill(ex: ExerciseViewModel) {
+    var show by remember { mutableStateOf(false) }
+    Pill(if (ex.timerMin > 0) "⏱ Minuteur : ${ex.timerMin} min" else "⏱ Minuteur : aucun", on = ex.timerMin > 0) { show = true }
+    if (show) {
+        TextPrompt(
+            "Minuteur global (minutes, 0 = aucun)", ex.timerMin.toString(), numeric = true,
+            onDone = { ex.updateTimer(it.toIntOrNull() ?: 0); show = false },
+            onDismiss = { show = false }
+        )
+    }
+}

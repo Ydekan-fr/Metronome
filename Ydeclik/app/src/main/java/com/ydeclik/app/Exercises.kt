@@ -106,6 +106,9 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
     var autoApplyBpm by mutableStateOf(true); private set
     var sortMode by mutableStateOf(SortMode.NAME); private set
 
+    /** Minuteur global (minutes, 0 = aucun), commun aux exercices et aux routines. */
+    var timerMin by mutableIntStateOf(0); private set
+
     var viewerItems by mutableStateOf(emptyList<Exercise>()); private set
     var viewerMinutes by mutableStateOf(emptyList<Int>()); private set
     var viewerAutoAdvance by mutableStateOf(false); private set
@@ -182,6 +185,7 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
             val aid = prefs.getLong("albumId", -1L)
             if (aid >= 0) album = Album(aid, prefs.getString("albumName", "") ?: "", 0)
             autoApplyBpm = prefs.getBoolean("autoApply", true)
+            timerMin = prefs.getInt("timerMin", 0)
             sortMode = SortMode.valueOf(prefs.getString("sort", "NAME") ?: "NAME")
         }
         refreshAlbumItems()
@@ -261,6 +265,11 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
     fun updateSort(m: SortMode) {
         sortMode = m
         prefs.edit().putString("sort", m.name).apply()
+    }
+
+    fun updateTimer(min: Int) {
+        timerMin = min.coerceIn(0, 600)
+        prefs.edit().putInt("timerMin", timerMin).apply()
     }
 
     fun updateAutoApply(v: Boolean) {
@@ -485,11 +494,13 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------ ouverture
 
-    fun openExercise(e: Exercise) {
-        viewerItems = listOf(e)
-        viewerMinutes = listOf(0)
+    /** Ouvre l'exercice dans la liste affichée (même tri) pour pouvoir swiper vers les autres. */
+    fun openExercise(e: Exercise, list: List<Exercise> = listOf(e)) {
+        val l = if (list.any { it.uri == e.uri }) list else listOf(e)
+        viewerItems = l
+        viewerMinutes = l.map { 0 }
         viewerAutoAdvance = false
-        viewerStart = 0
+        viewerStart = l.indexOfFirst { it.uri == e.uri }.coerceAtLeast(0)
         viewerTitle = null
         stack.add(Screen.VIEWER)
     }
