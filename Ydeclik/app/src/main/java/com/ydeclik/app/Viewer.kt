@@ -224,6 +224,7 @@ private fun PdfFitPage(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PdfViewer(
     uri: String,
