@@ -227,6 +227,10 @@ fun ExercisesScreen(ex: ExerciseViewModel) {
         showAlbums = true
     }
     var menuFor by remember { mutableStateOf<Exercise?>(null) }
+    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { u ->
+        if (u != null) ex.chooseFolder(u)
+    }
+    var folderMenu by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 12.dp)) {
         HeaderBar(ex, "Exercices")
@@ -242,7 +246,13 @@ fun ExercisesScreen(ex: ExerciseViewModel) {
             }
         }
         Spacer(Modifier.height(6.dp))
-        TimerPill(ex)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Pill(if (ex.folderUri != null) "Dossier : ${ex.folderName.ifBlank { "?" }}" else "+ Dossier (Dropbox…)", on = ex.folderUri != null) {
+                if (ex.folderUri != null) folderMenu = true else folderPicker.launch(null)
+            }
+            if (ex.folderUri != null) Pill("↻ Actualiser") { ex.refreshFolder() }
+            TimerPill(ex)
+        }
         Row(
             Modifier.fillMaxWidth().padding(vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -279,6 +289,20 @@ fun ExercisesScreen(ex: ExerciseViewModel) {
                 }
             }
         }
+    }
+
+    if (folderMenu) {
+        AlertDialog(
+            onDismissRequest = { folderMenu = false },
+            title = { Text("Dossier surveillé") },
+            text = { Text("${ex.folderName}\n${ex.folderItems.size} fichier(s) trouvé(s). Il est relu à chaque retour dans l'application.") },
+            confirmButton = {
+                TextButton(onClick = { folderMenu = false; folderPicker.launch(null) }) { Text("Changer", color = Orange) }
+            },
+            dismissButton = {
+                TextButton(onClick = { folderMenu = false; ex.chooseFolder(null) }) { Text("Retirer") }
+            }
+        )
     }
 
     menuFor?.let { e ->

@@ -402,34 +402,45 @@ fun BeatsRow(vm: MetronomeViewModel) {
 @Composable
 fun AutoPanel(vm: MetronomeViewModel) {
     val c = vm.cfg
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically
+    Column(
+        Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Pill("AUTO", on = c.autoOn) { vm.toggleAuto() }
-        if (c.autoMode == AutoMode.MUTE) {
-            Pill("SILENCE") { vm.toggleAutoMode() }
-            Tag("jouer")
-            ScrubNumber(c.playBars, { vm.setPlayBars(it) }, 1..99, 15.sp, 36.dp, pxPerStep = 28f,
-                onEditing = { vm.typing = it })
-            Tag("mes. ·")
-            Tag(if (c.muteRandom) "silence 1 à" else "silence")
-            ScrubNumber(c.muteBars, { vm.setMuteBars(it) }, 1..99, 15.sp, 36.dp, pxPerStep = 28f,
-                onEditing = { vm.typing = it })
-            Tag("mes.")
-            Pill("ALÉAT.", on = c.muteRandom) { vm.toggleMuteRandom() }
-        } else {
-            Pill("AJOUT") { vm.toggleAutoMode() }
-            Pill("±") { vm.setAddBpm(-c.addBpm) }
-            ScrubNumber(c.addBpm, { vm.setAddBpm(it) }, -50..50, 15.sp, 44.dp, pxPerStep = 28f, signed = true,
-                onEditing = { vm.typing = it })
-            Tag("BPM toutes les")
-            ScrubNumber(c.addEvery, { vm.setAddEvery(it) }, 1..999, 15.sp, 44.dp, pxPerStep = 28f,
-                onEditing = { vm.typing = it })
-            Pill(if (c.addUnit == AddUnit.BAR) "MES." else "SEC") { vm.toggleAddUnit() }
+        // Ligne 1 : activation, mode, option aléatoire (toujours visibles)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Pill("AUTO", on = c.autoOn) { vm.toggleAuto() }
+            if (c.autoMode == AutoMode.MUTE) {
+                Pill("SILENCE") { vm.toggleAutoMode() }
+                Pill("ALÉATOIRE", on = c.muteRandom) { vm.toggleMuteRandom() }
+            } else {
+                Pill("AJOUT") { vm.toggleAutoMode() }
+            }
+        }
+        // Ligne 2 : réglages
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (c.autoMode == AutoMode.MUTE) {
+                Tag("jouer")
+                ScrubNumber(c.playBars, { vm.setPlayBars(it) }, 1..99, 15.sp, 36.dp, pxPerStep = 28f,
+                    onEditing = { vm.typing = it })
+                Tag("mes. ·")
+                Tag(if (c.muteRandom) "silence de 1 à" else "silence")
+                ScrubNumber(c.muteBars, { vm.setMuteBars(it) }, 1..99, 15.sp, 36.dp, pxPerStep = 28f,
+                    onEditing = { vm.typing = it })
+                Tag("mes.")
+            } else {
+                Pill("±") { vm.setAddBpm(-c.addBpm) }
+                ScrubNumber(c.addBpm, { vm.setAddBpm(it) }, -50..50, 15.sp, 44.dp, pxPerStep = 28f, signed = true,
+                    onEditing = { vm.typing = it })
+                Tag("BPM toutes les")
+                ScrubNumber(c.addEvery, { vm.setAddEvery(it) }, 1..999, 15.sp, 44.dp, pxPerStep = 28f,
+                    onEditing = { vm.typing = it })
+                Pill(if (c.addUnit == AddUnit.BAR) "MES." else "SEC") { vm.toggleAddUnit() }
+            }
         }
     }
 }

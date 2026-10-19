@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.SystemClock
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.compose.runtime.getValue
@@ -106,6 +107,11 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
     var autoApplyBpm by mutableStateOf(true); private set
     var sortMode by mutableStateOf(SortMode.NAME); private set
 
+    /** Dossier surveillé (ex. dossier Dropbox où GoodNotes sauvegarde ses PDF). */
+    var folderUri by mutableStateOf<String?>(null); private set
+    var folderName by mutableStateOf(""); private set
+    var folderItems by mutableStateOf(emptyList<Exercise>()); private set
+
     /** Minuteur global (minutes, 0 = aucun), commun aux exercices et aux routines. */
     var timerMin by mutableIntStateOf(0); private set
 
@@ -127,7 +133,8 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
     val library: List<Exercise>
         get() {
             val known = imported.map { it.uri }.toSet()
-            return imported + albumItems.filter { it.uri !in known }
+            val known2 = known + imported.map { it.uri }
+            return imported + (folderItems + albumItems).filter { it.uri !in known2 }.distinctBy { it.uri }
         }
 
     init {
@@ -182,13 +189,18 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
             }
         }
         runCatching {
-            val aid = prefs.getLong("albumId", -1L)
-            if (aid >= 0) album = Album(aid, prefs.getString("albumName", "") ?: "", 0)
+            // Les identifiants d'album (BUCKET_ID) peuvent être négatifs : on teste la présence de la clé.
+            if (prefs.contains("albumId")) {
+                album = Album(prefs.getLong("albumId", 0L), prefs.getString("albumName", "") ?: "", 0)
+            }
             autoApplyBpm = prefs.getBoolean("autoApply", true)
             timerMin = prefs.getInt("timerMin", 0)
+            folderUri = prefs.getString("folderUri", null)
+            folderName = prefs.getString("folderName", "") ?: ""
             sortMode = SortMode.valueOf(prefs.getString("sort", "NAME") ?: "NAME")
         }
         refreshAlbumItems()
+        refreshFolder()
         loadUsage()
         startUsageLoop()
     }
@@ -319,6 +331,59 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Choisit (ou retire, si [uri] est nul) le dossier surveillé. */
+    fun chooseFolder(uri: Uri?) {
+        if (uri == null) {
+            folderUri = null; folderName = ""; folderItems = emptyList()
+            prefs.edit().remove("folderUri").remove("folderName").apply()
+            return
+        }
+        runCatching { cr.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        folderUri = uri.toString()
+        folderName = Uri.decode(uri.lastPathSegment ?: "").substringAfterLast('/').substringAfterLast(':')
+        prefs.edit().putString("folderUri", folderUri).putString("folderName", folderName).apply()
+        refreshFolder()
+    }
+
+    /** Relit le dossier : appelé au démarrage, au retour dans l'appli et par le bouton d'actualisation. */
+    fun refreshFolder() {
+        val tree = folderUri?.let { Uri.parse(it) } ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val out = ArrayList<Exercise>()
+            fun scan(docId: String, depth: Int) {
+                val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId)
+                runCatching {
+                    cr.query(
+                        children,
+                        arrayOf(
+                            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                            DocumentsContract.Document.COLUMN_MIME_TYPE
+                        ), null, null, null
+                    )?.use { c ->
+                        while (c.moveToNext()) {
+                            val id = c.getString(0)
+                            val name = c.getString(1) ?: continue
+                            val mime = c.getString(2) ?: ""
+                            if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                                if (depth < 3) scan(id, depth + 1)
+                            } else {
+                                val pdf = mime == "application/pdf" || name.endsWith(".pdf", true)
+                                val img = mime == "image/jpeg" || mime == "image/png" ||
+                                    name.endsWith(".jpg", true) || name.endsWith(".jpeg", true) || name.endsWith(".png", true)
+                                if (pdf || img) {
+                                    out.add(Exercise(DocumentsContract.buildDocumentUriUsingTree(tree, id).toString(), name, pdf))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            runCatching { scan(DocumentsContract.getTreeDocumentId(tree), 0) }
+            withContext(Dispatchers.Main) { folderItems = out.sortedBy { it.name.lowercase() } }
+        }
+    }
+
     fun refreshAlbumItems() {
         val a = album ?: return
         viewModelScope.launch(Dispatchers.IO) {
@@ -431,6 +496,7 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
     /** Le temps compte tant que l'appli est à l'écran ou que le métronome joue. */
     fun onForegroundChanged(fg: Boolean) {
         foreground = fg
+        if (fg) refreshFolder()
         refreshToday()
         if (!fg) saveUsage()
     }
