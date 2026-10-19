@@ -3,11 +3,17 @@ package com.ydeclik.app
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
+import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.view.KeyEvent
+import androidx.annotation.RequiresApi
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -33,7 +39,22 @@ class MetronomeViewModel(private val app: Application) : AndroidViewModel(app) {
     private var tickJob: Job? = null
     private val taps = ArrayList<Long>()
 
-    /** True while a number is being typed (hardware-keyboard shortcuts are then ignored). */
+    // Un appel entrant (ou toute autre appli qui prend le focus audio) arrête le métronome.
+    private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
+        if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) stop()
+    }
+    private val focusRequest: AudioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+        .setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build()
+        )
+        .setOnAudioFocusChangeListener(focusListener, Handler(Looper.getMainLooper()))
+        .build()
+    private var modeWatcher: ModeWatcher? = null
+
+    /** Vrai pendant la saisie d'un nombre (les raccourcis du clavier physique sont alors ignorés). */
     var typing = false
 
     var cfg by mutableStateOf(Config()); private set
@@ -44,13 +65,9 @@ class MetronomeViewModel(private val app: Application) : AndroidViewModel(app) {
     var flashAccent by mutableStateOf(false); private set
     var tempoEditTrigger by mutableIntStateOf(0); private set
 
-    var volume by mutableFloatStateOf(0.8f); private set
-    var muted by mutableStateOf(false); private set
     var pan by mutableFloatStateOf(0f); private set
     var sound by mutableStateOf(SoundKind.CLICK); private set
     var lightEnabled by mutableStateOf(true); private set
-    var keepScreenOn by mutableStateOf(true); private set
-    var fullscreen by mutableStateOf(false); private set
     var deviceName by mutableStateOf(""); private set
     var devices by mutableStateOf(emptyList<AudioDeviceInfo>()); private set
 
@@ -58,7 +75,6 @@ class MetronomeViewModel(private val app: Application) : AndroidViewModel(app) {
     var currentSlot by mutableIntStateOf(0); private set
 
     init {
-        // Restore saved state
         prefs.getString("cfg", null)?.let { s ->
             runCatching { configFromJson(JSONObject(s)) }.getOrNull()?.let { cfg = it }
         }
@@ -70,10 +86,8 @@ class MetronomeViewModel(private val app: Application) : AndroidViewModel(app) {
                 }
             }
         }
-        volume = prefs.getFloat("volume", 0.8f)
         pan = prefs.getFloat("pan", 0f)
         lightEnabled = prefs.getBoolean("light", true)
-        keepScreenOn = prefs.getBoolean("keepScreen", true)
         currentSlot = prefs.getInt("slot", 0).coerceIn(0, 8)
         prefs.getString("sound", null)?.let { n ->
             SoundKind.values().firstOrNull { it.name == n }?.let { sound = it }
@@ -83,9 +97,12 @@ class MetronomeViewModel(private val app: Application) : AndroidViewModel(app) {
         engine.onTempoChange = { setBPM(it) }
         engine.cfg.set(cfg)
         engine.setSound(sound)
-        engine.setVolume(volume)
         engine.pan = pan
         refreshDevices()
+
+        if (Build.VERSION.SDK_INT >= 31) {
+            modeWatcher = ModeWatcher(app) { stop() }.also { it.start() }
+        }
     }
 
     // ------------------------------------------------------------ config plumbing
@@ -102,6 +119,7 @@ class MetronomeViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun start() {
         if (isPlaying) return
+        runCatching { audioManager.requestAudioFocus(focusRequest) }
         engine.start()
         isPlaying = true
         if (!wakeLock.isHeld) wakeLock.acquire(6 * 60 * 60 * 1000L)
@@ -120,6 +138,7 @@ class MetronomeViewModel(private val app: Application) : AndroidViewModel(app) {
         tickJob?.cancel(); tickJob = null
         currentBeat = -1; currentSub = -1; flash = false
         if (wakeLock.isHeld) wakeLock.release()
+        runCatching { audioManager.abandonAudioFocusRequest(focusRequest) }
         app.stopService(Intent(app, PlaybackService::class.java))
     }
 
@@ -140,6 +159,8 @@ class MetronomeViewModel(private val app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         engine.stop()
         if (wakeLock.isHeld) wakeLock.release()
+        runCatching { audioManager.abandonAudioFocusRequest(focusRequest) }
+        modeWatcher?.stop()
         app.stopService(Intent(app, PlaybackService::class.java))
     }
 
@@ -152,7 +173,7 @@ class MetronomeViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun nudge(d: Int) = setBPM(cfg.bpm + d)
 
-    /** Snap to the nearest multiple of 5 in the given direction first, then step by 5. */
+    /** Rejoint le multiple de 5 le plus proche dans la direction donnée, puis avance de 5 en 5. */
     fun step5(dir: Int) {
         val b = cfg.bpm
         val r = b % 5
@@ -202,11 +223,17 @@ class MetronomeViewModel(private val app: Application) : AndroidViewModel(app) {
         update(cfg.copy(states = states))
     }
 
+    /** Applique un réglage complet (utilisé par les setlists). */
+    fun applyPattern(bpm: Int, sig: TimeSig, grouping: Int, subs: List<Int>, states: List<List<NoteState>>) {
+        update(cfg.copy(bpm = bpm.coerceIn(20, 300), sig = sig, grouping = grouping, subs = subs, states = states))
+    }
+
     // ------------------------------------------------------------ auto mode
 
     fun toggleAuto() = update(cfg.copy(autoOn = !cfg.autoOn))
     fun toggleAutoMode() =
         update(cfg.copy(autoMode = if (cfg.autoMode == AutoMode.MUTE) AutoMode.ADD else AutoMode.MUTE))
+    fun toggleMuteRandom() = update(cfg.copy(muteRandom = !cfg.muteRandom))
     fun toggleAddUnit() =
         update(cfg.copy(addUnit = if (cfg.addUnit == AddUnit.BAR) AddUnit.SEC else AddUnit.BAR))
     fun setPlayBars(v: Int) = update(cfg.copy(playBars = v))
@@ -214,7 +241,7 @@ class MetronomeViewModel(private val app: Application) : AndroidViewModel(app) {
     fun setAddBpm(v: Int) = update(cfg.copy(addBpm = v))
     fun setAddEvery(v: Int) = update(cfg.copy(addEvery = v))
 
-    // ------------------------------------------------------------ presets
+    // ------------------------------------------------------------ presets (9 emplacements)
 
     private fun savePresets() {
         val arr = JSONArray()
@@ -245,7 +272,7 @@ class MetronomeViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ------------------------------------------------------------ sound & settings
+    // ------------------------------------------------------------ son et réglages
 
     fun cycleSound() {
         val all = SoundKind.values()
@@ -258,18 +285,6 @@ class MetronomeViewModel(private val app: Application) : AndroidViewModel(app) {
         prefs.edit().putString("sound", s.name).apply()
     }
 
-    private fun applyVolume() = engine.setVolume(if (muted) 0f else volume)
-
-    fun updateVolume(v: Float) {
-        volume = v.coerceIn(0f, 1f)
-        applyVolume()
-        prefs.edit().putFloat("volume", volume).apply()
-    }
-
-    fun changeVolume(d: Float) = updateVolume(volume + d)
-
-    fun toggleMute() { muted = !muted; applyVolume() }
-
     fun updatePan(p: Float) {
         pan = p.coerceIn(-1f, 1f)
         engine.pan = pan
@@ -281,21 +296,14 @@ class MetronomeViewModel(private val app: Application) : AndroidViewModel(app) {
         prefs.edit().putBoolean("light", lightEnabled).apply()
     }
 
-    fun updateKeepScreenOn(v: Boolean) {
-        keepScreenOn = v
-        prefs.edit().putBoolean("keepScreen", v).apply()
-    }
-
-    fun toggleFullscreen() { fullscreen = !fullscreen }
-
     fun deviceLabel(d: AudioDeviceInfo): String {
         val type = when (d.type) {
-            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "Speaker"
-            AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_WIRED_HEADSET -> "Wired"
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "Haut-parleur"
+            AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_WIRED_HEADSET -> "Filaire"
             AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "Bluetooth"
             AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_HEADSET -> "USB"
             AudioDeviceInfo.TYPE_HDMI -> "HDMI"
-            else -> "Other"
+            else -> "Autre"
         }
         return "${d.productName} ($type)"
     }
@@ -311,17 +319,19 @@ class MetronomeViewModel(private val app: Application) : AndroidViewModel(app) {
         engine.setDevice(devices.firstOrNull { deviceLabel(it) == label })
     }
 
-    // ------------------------------------------------------------ hardware keyboard
+    // ------------------------------------------------------------ clavier physique
 
     fun handleKey(keyCode: Int, ctrl: Boolean, repeat: Boolean): Boolean {
         if (typing) return false
         fun once(f: () -> Unit): Boolean { if (!repeat) f(); return true }
 
-        when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_UP -> { if (ctrl) changeVolume(0.05f) else nudge(1); return true }
-            KeyEvent.KEYCODE_DPAD_DOWN -> { if (ctrl) changeVolume(-0.05f) else nudge(-1); return true }
-            KeyEvent.KEYCODE_DPAD_RIGHT -> { if (ctrl) changeVolume(0.05f) else step5(1); return true }
-            KeyEvent.KEYCODE_DPAD_LEFT -> { if (ctrl) changeVolume(-0.05f) else step5(-1); return true }
+        if (!ctrl) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_UP -> { nudge(1); return true }
+                KeyEvent.KEYCODE_DPAD_DOWN -> { nudge(-1); return true }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> { step5(1); return true }
+                KeyEvent.KEYCODE_DPAD_LEFT -> { step5(-1); return true }
+            }
         }
         if (keyCode in KeyEvent.KEYCODE_1..KeyEvent.KEYCODE_9) {
             val slot = keyCode - KeyEvent.KEYCODE_1
@@ -333,13 +343,26 @@ class MetronomeViewModel(private val app: Application) : AndroidViewModel(app) {
             KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_T -> once { tap() }
             KeyEvent.KEYCODE_SPACE -> once { toggle() }
             KeyEvent.KEYCODE_A -> once { toggleAuto() }
-            KeyEvent.KEYCODE_M -> once { toggleMute() }
             KeyEvent.KEYCODE_O -> once { cycleSound() }
             KeyEvent.KEYCODE_S -> once { savePreset(currentSlot) }
             KeyEvent.KEYCODE_P -> once { cyclePreset() }
             KeyEvent.KEYCODE_L -> once { toggleLight() }
-            KeyEvent.KEYCODE_F -> once { toggleFullscreen() }
             else -> false
         }
     }
+}
+
+/** Détecte la sonnerie / un appel en cours (Android 12+) et arrête le métronome. */
+@RequiresApi(31)
+private class ModeWatcher(private val ctx: Context, private val onCall: () -> Unit) {
+    private val am = ctx.getSystemService(AudioManager::class.java)
+    private val listener = AudioManager.OnModeChangedListener { mode ->
+        if (mode == AudioManager.MODE_RINGTONE ||
+            mode == AudioManager.MODE_IN_CALL ||
+            mode == AudioManager.MODE_IN_COMMUNICATION
+        ) onCall()
+    }
+
+    fun start() = am.addOnModeChangedListener(ContextCompat.getMainExecutor(ctx), listener)
+    fun stop() = am.removeOnModeChangedListener(listener)
 }

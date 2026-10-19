@@ -6,43 +6,65 @@ import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.DateFormat
+import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
 data class Exercise(val uri: String, val name: String, val isPdf: Boolean, val fromAlbum: Boolean = false)
 
-/** Per-exercise practice statistics, keyed by the file URI. */
-data class ExStats(
-    val lastOpened: Long = 0L,
-    val firstBpm: Int? = null,
-    val lastBpm: Int? = null,
-    val targetBpm: Int? = null
-)
+/** Statistiques de BPM. Une entrée par fichier image, et une par page pour un PDF (voir [statKey]). */
+data class ExStats(val firstBpm: Int? = null, val lastBpm: Int? = null, val targetBpm: Int? = null)
 
-data class Routine(val id: String, val name: String, val items: List<String>)
+/** Informations propres au fichier : dernière ouverture et dernière page ouverte. */
+data class FileMeta(val lastOpened: Long = 0L, val lastPage: Int = 0)
+
+/** Une entrée de routine : un fichier et un minuteur facultatif en minutes (0 = pas de minuteur). */
+data class RoutineItem(val uri: String, val minutes: Int = 0)
+
+data class Routine(
+    val id: String,
+    val name: String,
+    val items: List<RoutineItem>,
+    val autoAdvance: Boolean = false
+)
 
 data class Album(val id: Long, val name: String, val count: Int)
 
-enum class Screen { METRONOME, EXERCISES, ROUTINES, ROUTINE_EDIT, VIEWER }
+data class DayUsage(val day: String, val appSec: Long, val playSec: Long)
+
+enum class SortMode { NAME, RECENT }
+
+enum class Screen {
+    METRONOME, EXERCISES, ROUTINES, ROUTINE_EDIT, VIEWER, USAGE, SETLISTS, SETLIST_EDIT, SETLIST_LIVE
+}
+
+/** Clé des statistiques : le fichier (page 1 ou image) ou « fichier#pN » pour les pages suivantes d'un PDF. */
+fun statKey(uri: String, page: Int): String = if (page <= 0) uri else "$uri#p$page"
 
 fun fmtDate(ms: Long): String =
-    if (ms <= 0L) "Never"
+    if (ms <= 0L) "Jamais"
     else DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(ms))
+
+fun dayKey(): String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
 
 class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
 
@@ -54,31 +76,51 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
     val stack = mutableStateListOf(Screen.METRONOME)
     val screen: Screen get() = stack.last()
 
-    /** Switch between the three main tabs. */
+    /** Vrai quand le fichier est affiché en plein écran (double toucher). */
+    var immersive by mutableStateOf(false)
+
+    /** Passe d'un onglet principal à un autre. */
     fun tab(s: Screen) {
+        immersive = false
         stack.clear()
         stack.add(Screen.METRONOME)
         if (s != Screen.METRONOME) stack.add(s)
     }
 
-    fun back() { if (stack.size > 1) stack.removeAt(stack.lastIndex) }
+    fun push(s: Screen) { stack.add(s) }
 
-    // ------------------------------------------------------------ state
+    fun back() {
+        immersive = false
+        if (stack.size > 1) stack.removeAt(stack.lastIndex)
+    }
+
+    // ------------------------------------------------------------ état
 
     var imported by mutableStateOf(emptyList<Exercise>()); private set
     var albumItems by mutableStateOf(emptyList<Exercise>()); private set
     var album by mutableStateOf<Album?>(null); private set
     var albums by mutableStateOf(emptyList<Album>()); private set
     var stats by mutableStateOf(emptyMap<String, ExStats>()); private set
+    var meta by mutableStateOf(emptyMap<String, FileMeta>()); private set
     var routines by mutableStateOf(emptyList<Routine>()); private set
     var autoApplyBpm by mutableStateOf(true); private set
+    var sortMode by mutableStateOf(SortMode.NAME); private set
 
     var viewerItems by mutableStateOf(emptyList<Exercise>()); private set
+    var viewerMinutes by mutableStateOf(emptyList<Int>()); private set
+    var viewerAutoAdvance by mutableStateOf(false); private set
     var viewerStart by mutableIntStateOf(0); private set
     var viewerTitle by mutableStateOf<String?>(null); private set
     var editingRoutineId by mutableStateOf<String?>(null); private set
 
-    /** Imported files first, then the files of the chosen gallery album. */
+    // Temps d'utilisation par jour (millisecondes : [temps dans l'appli, temps avec le métronome en marche])
+    var playingProvider: () -> Boolean = { false }
+    var todayAppSec by mutableLongStateOf(0L); private set
+    var todayPlaySec by mutableLongStateOf(0L); private set
+    private val usageDays = LinkedHashMap<String, LongArray>()
+    private var foreground = false
+
+    /** Fichiers importés d'abord, puis ceux de l'album choisi dans la galerie. */
     val library: List<Exercise>
         get() {
             val known = imported.map { it.uri }.toSet()
@@ -94,13 +136,14 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
                     Exercise(o.getString("uri"), o.getString("name"), o.optBoolean("pdf"))
                 }
             }
+        }
+        runCatching {
             prefs.getString("stats", null)?.let { s ->
                 val o = JSONObject(s)
                 val m = HashMap<String, ExStats>()
                 o.keys().forEach { k ->
                     val e = o.getJSONObject(k)
                     m[k] = ExStats(
-                        e.optLong("last", 0L),
                         e.optInt("first", -1).takeIf { it > 0 },
                         e.optInt("lastBpm", -1).takeIf { it > 0 },
                         e.optInt("target", -1).takeIf { it > 0 }
@@ -108,22 +151,45 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
                 }
                 stats = m
             }
+        }
+        runCatching {
+            prefs.getString("meta", null)?.let { s ->
+                val o = JSONObject(s)
+                val m = HashMap<String, FileMeta>()
+                o.keys().forEach { k ->
+                    val e = o.getJSONObject(k)
+                    m[k] = FileMeta(e.optLong("last", 0L), e.optInt("page", 0))
+                }
+                meta = m
+            }
+        }
+        runCatching {
             prefs.getString("routines", null)?.let { s ->
                 val a = JSONArray(s)
                 routines = List(a.length()) { i ->
                     val o = a.getJSONObject(i)
-                    val it = o.getJSONArray("items")
-                    Routine(o.getString("id"), o.getString("name"), List(it.length()) { j -> it.getString(j) })
+                    val arr = o.getJSONArray("items")
+                    val items = List(arr.length()) { j ->
+                        val v = arr.get(j)
+                        if (v is JSONObject) RoutineItem(v.getString("uri"), v.optInt("min", 0))
+                        else RoutineItem(v.toString())
+                    }
+                    Routine(o.getString("id"), o.getString("name"), items, o.optBoolean("auto", false))
                 }
             }
+        }
+        runCatching {
             val aid = prefs.getLong("albumId", -1L)
             if (aid >= 0) album = Album(aid, prefs.getString("albumName", "") ?: "", 0)
             autoApplyBpm = prefs.getBoolean("autoApply", true)
+            sortMode = SortMode.valueOf(prefs.getString("sort", "NAME") ?: "NAME")
         }
         refreshAlbumItems()
+        loadUsage()
+        startUsageLoop()
     }
 
-    // ------------------------------------------------------------ persistence
+    // ------------------------------------------------------------ persistance
 
     private fun saveImported() {
         val a = JSONArray()
@@ -138,7 +204,6 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
         stats.forEach { (k, v) ->
             o.put(
                 k, JSONObject()
-                    .put("last", v.lastOpened)
                     .put("first", v.firstBpm ?: -1)
                     .put("lastBpm", v.lastBpm ?: -1)
                     .put("target", v.targetBpm ?: -1)
@@ -147,21 +212,29 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
         prefs.edit().putString("stats", o.toString()).apply()
     }
 
+    private fun saveMeta() {
+        val o = JSONObject()
+        meta.forEach { (k, v) -> o.put(k, JSONObject().put("last", v.lastOpened).put("page", v.lastPage)) }
+        prefs.edit().putString("meta", o.toString()).apply()
+    }
+
     private fun saveRoutines() {
         val a = JSONArray()
-        routines.forEach {
-            a.put(JSONObject().put("id", it.id).put("name", it.name).put("items", JSONArray(it.items)))
+        routines.forEach { r ->
+            val items = JSONArray()
+            r.items.forEach { ri -> items.put(JSONObject().put("uri", ri.uri).put("min", ri.minutes)) }
+            a.put(JSONObject().put("id", r.id).put("name", r.name).put("items", items).put("auto", r.autoAdvance))
         }
         prefs.edit().putString("routines", a.toString()).apply()
     }
 
-    // ------------------------------------------------------------ library
+    // ------------------------------------------------------------ bibliothèque
 
     private fun displayName(uri: Uri): String = runCatching {
         cr.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
             if (c.moveToFirst()) c.getString(0) else null
         }
-    }.getOrNull() ?: (uri.lastPathSegment ?: "file")
+    }.getOrNull() ?: (uri.lastPathSegment ?: "fichier")
 
     fun addImported(uris: List<Uri>) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -185,7 +258,17 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
         saveImported()
     }
 
-    // ------------------------------------------------------------ gallery album
+    fun updateSort(m: SortMode) {
+        sortMode = m
+        prefs.edit().putString("sort", m.name).apply()
+    }
+
+    fun updateAutoApply(v: Boolean) {
+        autoApplyBpm = v
+        prefs.edit().putBoolean("autoApply", v).apply()
+    }
+
+    // ------------------------------------------------------------ album de la galerie
 
     private fun queryAlbums(): List<Album> {
         val map = LinkedHashMap<Long, Pair<String, Int>>()
@@ -244,31 +327,49 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
         if (a == null) albumItems = emptyList() else refreshAlbumItems()
     }
 
-    fun updateAutoApply(v: Boolean) {
-        autoApplyBpm = v
-        prefs.edit().putBoolean("autoApply", v).apply()
-    }
+    // ------------------------------------------------------------ statistiques
 
-    // ------------------------------------------------------------ stats
+    fun metaPage(uri: String): Int = meta[uri]?.lastPage ?: 0
 
-    private fun putStats(uri: String, f: (ExStats) -> ExStats) {
-        val cur = stats[uri] ?: ExStats()
+    fun lastOpened(uri: String): Long = meta[uri]?.lastOpened ?: 0L
+
+    /** Statistiques affichées dans la galerie : celles de la page ouverte en dernier. */
+    fun fileStats(uri: String): ExStats? = stats[statKey(uri, metaPage(uri))]
+
+    private fun putStats(key: String, f: (ExStats) -> ExStats) {
+        val cur = stats[key] ?: ExStats()
         val next = f(cur)
         if (next == cur) return
-        stats = stats + (uri to next)
+        stats = stats + (key to next)
         saveStats()
     }
 
-    fun markOpened(uri: String) = putStats(uri) { it.copy(lastOpened = System.currentTimeMillis()) }
+    fun markOpened(uri: String) {
+        val cur = meta[uri] ?: FileMeta()
+        meta = meta + (uri to cur.copy(lastOpened = System.currentTimeMillis()))
+        saveMeta()
+    }
 
-    /** Called while the metronome is playing on this exercise. */
-    fun recordBpm(uri: String, bpm: Int) = putStats(uri) { it.copy(firstBpm = it.firstBpm ?: bpm, lastBpm = bpm) }
+    fun setLastPage(uri: String, page: Int) {
+        val cur = meta[uri] ?: FileMeta()
+        if (cur.lastPage == page) return
+        meta = meta + (uri to cur.copy(lastPage = page))
+        saveMeta()
+    }
 
-    fun updateTarget(uri: String, bpm: Int?) = putStats(uri) { it.copy(targetBpm = bpm) }
+    /** Appelé pendant que le métronome joue sur cet exercice (ou cette page). */
+    fun recordBpm(key: String, bpm: Int) =
+        putStats(key) { it.copy(firstBpm = it.firstBpm ?: bpm, lastBpm = bpm) }
+
+    fun updateFirstBpm(key: String, bpm: Int) = putStats(key) { it.copy(firstBpm = bpm) }
+
+    fun updateTarget(key: String, bpm: Int?) = putStats(key) { it.copy(targetBpm = bpm) }
 
     fun resetStats(uri: String) {
-        stats = stats - uri
+        stats = stats.filterKeys { it != uri && !it.startsWith("$uri#p") }
+        meta = meta - uri
         saveStats()
+        saveMeta()
     }
 
     // ------------------------------------------------------------ routines
@@ -294,7 +395,8 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
         saveRoutines()
     }
 
-    fun addToRoutine(id: String, uris: List<String>) = updateRoutine(id) { it.copy(items = it.items + uris) }
+    fun addToRoutine(id: String, uris: List<String>) =
+        updateRoutine(id) { it.copy(items = it.items + uris.map { u -> RoutineItem(u) }) }
 
     fun removeFromRoutine(id: String, index: Int) = updateRoutine(id) {
         it.copy(items = it.items.toMutableList().also { l -> if (index in l.indices) l.removeAt(index) })
@@ -306,10 +408,87 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
         else r.copy(items = r.items.toMutableList().also { l -> l.add(to, l.removeAt(index)) })
     }
 
-    // ------------------------------------------------------------ opening
+    fun updateItemMinutes(id: String, index: Int, minutes: Int) = updateRoutine(id) { r ->
+        if (index !in r.items.indices) r
+        else r.copy(items = r.items.toMutableList().also { l ->
+            l[index] = l[index].copy(minutes = minutes.coerceIn(0, 600))
+        })
+    }
+
+    fun updateAutoAdvance(id: String, v: Boolean) = updateRoutine(id) { it.copy(autoAdvance = v) }
+
+    // ------------------------------------------------------------ temps d'utilisation quotidien
+
+    /** Le temps compte tant que l'appli est à l'écran ou que le métronome joue. */
+    fun onForegroundChanged(fg: Boolean) {
+        foreground = fg
+        refreshToday()
+        if (!fg) saveUsage()
+    }
+
+    private fun refreshToday() {
+        val arr = usageDays[dayKey()]
+        todayAppSec = (arr?.get(0) ?: 0L) / 1000
+        todayPlaySec = (arr?.get(1) ?: 0L) / 1000
+    }
+
+    private fun startUsageLoop() {
+        viewModelScope.launch {
+            var last = SystemClock.elapsedRealtime()
+            var n = 0
+            while (true) {
+                delay(1000)
+                val now = SystemClock.elapsedRealtime()
+                val dt = (now - last).coerceIn(0L, 5000L)
+                last = now
+                val playing = playingProvider()
+                if (foreground || playing) {
+                    val arr = usageDays.getOrPut(dayKey()) { LongArray(2) }
+                    arr[0] += dt
+                    if (playing) arr[1] += dt
+                }
+                refreshToday()
+                n++
+                if (n % 15 == 0) saveUsage()
+            }
+        }
+    }
+
+    private fun loadUsage() {
+        runCatching {
+            val o = JSONObject(prefs.getString("usage", "{}") ?: "{}")
+            o.keys().forEach { k ->
+                val a = o.getJSONArray(k)
+                usageDays[k] = longArrayOf(a.getLong(0), a.getLong(1))
+            }
+        }
+        refreshToday()
+    }
+
+    private fun saveUsage() {
+        val keys = usageDays.keys.sortedDescending().take(120)
+        val o = JSONObject()
+        keys.forEach { k -> usageDays[k]?.let { o.put(k, JSONArray(listOf(it[0], it[1]))) } }
+        prefs.edit().putString("usage", o.toString()).apply()
+    }
+
+    override fun onCleared() { saveUsage() }
+
+    /** Jours du plus récent au plus ancien. Lit [todayAppSec] pour que l'écran se rafraîchisse chaque seconde. */
+    fun usageDaysList(): List<DayUsage> {
+        val tick = todayAppSec + todayPlaySec
+        return usageDays.entries
+            .map { DayUsage(it.key, it.value[0] / 1000, it.value[1] / 1000) }
+            .filter { it.appSec > 0 || it.playSec > 0 || tick < 0 }
+            .sortedByDescending { it.day }
+    }
+
+    // ------------------------------------------------------------ ouverture
 
     fun openExercise(e: Exercise) {
         viewerItems = listOf(e)
+        viewerMinutes = listOf(0)
+        viewerAutoAdvance = false
         viewerStart = 0
         viewerTitle = null
         stack.add(Screen.VIEWER)
@@ -318,9 +497,12 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
     fun openRoutine(id: String, start: Int = 0) {
         val r = routines.firstOrNull { it.id == id } ?: return
         val lib = library
-        val items = r.items.mapNotNull { u -> lib.firstOrNull { it.uri == u } }
-        if (items.isEmpty()) return
+        val pairs = r.items.mapNotNull { ri -> lib.firstOrNull { it.uri == ri.uri }?.let { it to ri.minutes } }
+        if (pairs.isEmpty()) return
+        val items = pairs.map { it.first }
         viewerItems = items
+        viewerMinutes = pairs.map { it.second }
+        viewerAutoAdvance = r.autoAdvance
         viewerStart = start.coerceIn(0, items.lastIndex)
         viewerTitle = r.name
         stack.add(Screen.VIEWER)

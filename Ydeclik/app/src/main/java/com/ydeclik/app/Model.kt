@@ -46,13 +46,14 @@ data class Config(
     val grouping: Int = 0,
     val subs: List<Int> = listOf(1, 1, 1, 1),
     val states: List<List<NoteState>> = listOf(
-        listOf(NoteState.ACCENT), listOf(NoteState.NORMAL), listOf(NoteState.NORMAL), listOf(NoteState.NORMAL)
+        listOf(NoteState.NORMAL), listOf(NoteState.NORMAL), listOf(NoteState.NORMAL), listOf(NoteState.NORMAL)
     ),
     // Auto mode
     val autoOn: Boolean = false,
     val autoMode: AutoMode = AutoMode.MUTE,
     val playBars: Int = 2,
     val muteBars: Int = 1,
+    val muteRandom: Boolean = false,
     val addBpm: Int = 5,
     val addEvery: Int = 4,
     val addUnit: AddUnit = AddUnit.BAR
@@ -64,7 +65,7 @@ data class Config(
         val s = if (!keepSubs || subs.size != n) List(n) { 1 } else subs
         val starts = sig.groupStarts(grouping)
         val st = List(n) { b ->
-            List(max(1, s[b])) { k -> if (k == 0 && b in starts) NoteState.ACCENT else NoteState.NORMAL }
+            List(max(1, s[b])) { k -> if (k == 0 && b != 0 && starts.size > 1 && b in starts) NoteState.ACCENT else NoteState.NORMAL }
         }
         return copy(subs = s, states = st)
     }
@@ -99,6 +100,7 @@ fun Config.toJson(): JSONObject = JSONObject().apply {
     put("autoMode", autoMode.name)
     put("playBars", playBars)
     put("muteBars", muteBars)
+    put("muteRandom", muteRandom)
     put("addBpm", addBpm)
     put("addEvery", addEvery)
     put("addUnit", addUnit.name)
@@ -119,6 +121,7 @@ fun configFromJson(o: JSONObject): Config? = try {
         autoMode = AutoMode.valueOf(o.optString("autoMode", "MUTE")),
         playBars = o.optInt("playBars", 2),
         muteBars = o.optInt("muteBars", 1),
+        muteRandom = o.optBoolean("muteRandom", false),
         addBpm = o.optInt("addBpm", 5),
         addEvery = o.optInt("addEvery", 4),
         addUnit = AddUnit.valueOf(o.optString("addUnit", "BAR"))

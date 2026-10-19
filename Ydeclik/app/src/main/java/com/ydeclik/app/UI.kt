@@ -1,9 +1,8 @@
 package com.ydeclik.app
 
-import android.app.Activity
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,45 +13,17 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -63,22 +34,20 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.ui.unit.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 val Orange = Color(0xFFFF9500)
@@ -95,7 +64,7 @@ fun YdeclikTheme(content: @Composable () -> Unit) {
     )
 }
 
-// ------------------------------------------------------------------ helpers
+// ------------------------------------------------------------------ éléments communs
 
 @Composable
 fun Pill(text: String, on: Boolean = false, onClick: () -> Unit) {
@@ -115,7 +84,11 @@ fun Tag(text: String) {
     Text(text, color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
 }
 
-/** Number you can scrub vertically (drag) or tap to type. */
+/**
+ * Nombre modifiable : on le fait glisser verticalement, ou on le touche pour le saisir.
+ * À la saisie, le clavier numérique s'ouvre et le curseur se place à droite de la valeur existante.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun ScrubNumber(
     value: Int,
@@ -133,14 +106,16 @@ fun ScrubNumber(
     val curOnChange by rememberUpdatedState(onChange)
     val curEditing by rememberUpdatedState(onEditing)
     var editing by remember { mutableStateOf(false) }
-    var text by remember { mutableStateOf("") }
+    var field by remember { mutableStateOf(TextFieldValue("")) }
     var hadFocus by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
     val initialTrigger = remember { trigger }
 
     fun clamp(v: Int) = v.coerceIn(range.first, range.last)
     fun begin() {
-        text = curValue.toString()
+        val t = abs(curValue).toString()
+        field = TextFieldValue(t, TextRange(t.length))   // curseur à droite
         hadFocus = false
         editing = true
         curEditing(true)
@@ -149,7 +124,7 @@ fun ScrubNumber(
         if (!editing) return
         editing = false
         curEditing(false)
-        text.trim().toIntOrNull()?.let { curOnChange(clamp(it)) }
+        field.text.trim().toIntOrNull()?.let { curOnChange(clamp(if (curValue < 0) -it else it)) }
     }
 
     LaunchedEffect(trigger) { if (trigger != initialTrigger) begin() }
@@ -157,18 +132,15 @@ fun ScrubNumber(
     Box(Modifier.width(width), contentAlignment = Alignment.Center) {
         if (editing) {
             BasicTextField(
-                value = text,
-                onValueChange = { s -> text = s.filter { it.isDigit() || (signed && (it == '-' || it == '+')) } },
+                value = field,
+                onValueChange = { v -> field = v.copy(text = v.text.filter { it.isDigit() }) },
                 singleLine = true,
                 textStyle = TextStyle(
                     color = Color.White, fontSize = fontSize, fontWeight = weight, textAlign = TextAlign.Center
                 ),
                 cursorBrush = SolidColor(Orange),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = if (signed) KeyboardType.Text else KeyboardType.Number,
-                    imeAction = ImeAction.Done
-                ),
-                keyboardActions = KeyboardActions(onDone = { commit() }),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { commit(); keyboard?.hide() }),
                 modifier = Modifier
                     .focusRequester(focus)
                     .onFocusChanged { st ->
@@ -176,7 +148,10 @@ fun ScrubNumber(
                         else if (hadFocus) commit()
                     }
             )
-            LaunchedEffect(Unit) { focus.requestFocus() }
+            LaunchedEffect(Unit) {
+                runCatching { focus.requestFocus() }
+                keyboard?.show()
+            }
         } else {
             Text(
                 text = if (signed && value > 0) "+$value" else "$value",
@@ -199,19 +174,28 @@ fun ScrubNumber(
     }
 }
 
-/** Fires once on press, then repeats while held. */
+/**
+ * Bouton à répétition : un appui change la valeur de 1 ([onPress]) ;
+ * un appui long fait ensuite varier la valeur par multiples de 5 ([onHold]).
+ */
 @Composable
-fun HoldBox(onHold: () -> Unit, modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
-    val cur by rememberUpdatedState(onHold)
+fun HoldBox(
+    onPress: () -> Unit,
+    onHold: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit
+) {
+    val curPress by rememberUpdatedState(onPress)
+    val curHold by rememberUpdatedState(onHold)
     val scope = rememberCoroutineScope()
     Box(
         modifier.pointerInput(Unit) {
             awaitEachGesture {
                 awaitFirstDown()
-                cur()
+                curPress()
                 val job = scope.launch {
-                    delay(400)
-                    while (true) { cur(); delay(60) }
+                    delay(450)
+                    while (true) { curHold(); delay(140) }
                 }
                 waitForUpOrCancellation()
                 job.cancel()
@@ -222,49 +206,52 @@ fun HoldBox(onHold: () -> Unit, modifier: Modifier = Modifier, content: @Composa
     )
 }
 
+/** Icône de note : 1, 2, 3 ou 4 notes, qui s'adapte à la taille disponible. */
 @Composable
 fun NoteIcon(n: Int, color: Color, modifier: Modifier = Modifier) {
     Canvas(modifier) {
-        val d = density
-        val hw = 10f * d
-        val hh = 7.5f * d
-        val headY = size.height - 10f * d
-        val topY = if (n == 3) 18f * d else 9f * d
+        val slot = size.width / (n + 1)
+        val hw = min(slot * 0.9f, 10.dp.toPx())
+        val hh = hw * 0.75f
+        val lw = max(1f, hw * 0.18f)
+        val headY = size.height - hh
+        val topY = if (n == 3) size.height * 0.36f else size.height * 0.16f
         val stems = ArrayList<Float>()
         for (i in 0 until n) {
             val cx = size.width * (i + 1) / (n + 1)
             drawOval(color, topLeft = Offset(cx - hw / 2, headY - hh / 2), size = Size(hw, hh))
-            val sx = cx + hw / 2 - 1f * d
+            val sx = cx + hw / 2 - lw / 2
             stems.add(sx)
-            drawLine(color, Offset(sx, headY), Offset(sx, topY), strokeWidth = 1.8f * d)
+            drawLine(color, Offset(sx, headY), Offset(sx, topY), strokeWidth = lw)
         }
         if (n >= 2) {
             val f = stems.first()
             val l = stems.last()
-            drawRect(color, Offset(f, topY), Size(l - f + 1.8f * d, 3.2f * d))
-            if (n == 4) drawRect(color, Offset(f, topY + 5.5f * d), Size(l - f + 1.8f * d, 3.2f * d))
+            val bh = max(2f, hw * 0.32f)
+            drawRect(color, Offset(f - lw / 2, topY), Size(l - f + lw, bh))
+            if (n == 4) drawRect(color, Offset(f - lw / 2, topY + bh * 1.7f), Size(l - f + lw, bh))
         }
     }
 }
 
 @Composable
-fun MiniButton(symbol: String, on: Boolean, tint: Color, onClick: () -> Unit) {
+fun MiniButton(symbol: String, on: Boolean, tint: Color, w: Dp, h: Dp, onClick: () -> Unit) {
     Box(
         Modifier
-            .size(width = 22.dp, height = 22.dp)
-            .clip(RoundedCornerShape(5.dp))
+            .size(width = w, height = h)
+            .clip(RoundedCornerShape(4.dp))
             .background(if (on) tint else Color.White.copy(alpha = 0.08f))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
-            symbol, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+            symbol, fontSize = (w.value * 0.55f).coerceIn(6f, 11f).sp, fontWeight = FontWeight.Bold,
             color = if (on) Color.Black else Color.White.copy(alpha = 0.6f)
         )
     }
 }
 
-// ------------------------------------------------------------------ sections
+// ------------------------------------------------------------------ écran métronome
 
 @Composable
 fun TopBar(vm: MetronomeViewModel) {
@@ -311,7 +298,7 @@ fun TopBar(vm: MetronomeViewModel) {
 @Composable
 fun TempoSection(vm: MetronomeViewModel) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        HoldBox({ vm.nudge(1) }, Modifier.size(width = 140.dp, height = 48.dp)) {
+        HoldBox({ vm.nudge(1) }, { vm.step5(1) }, Modifier.size(width = 140.dp, height = 48.dp)) {
             Text("▲", fontSize = 26.sp, color = Color.White)
         }
         ScrubNumber(
@@ -319,7 +306,7 @@ fun TempoSection(vm: MetronomeViewModel) {
             fontSize = 96.sp, width = 260.dp, weight = FontWeight.Light, pxPerStep = 12f,
             trigger = vm.tempoEditTrigger, onEditing = { vm.typing = it }
         )
-        HoldBox({ vm.nudge(-1) }, Modifier.size(width = 140.dp, height = 48.dp)) {
+        HoldBox({ vm.nudge(-1) }, { vm.step5(-1) }, Modifier.size(width = 140.dp, height = 48.dp)) {
             Text("▼", fontSize = 26.sp, color = Color.White)
         }
         Text("BPM · ${tempoName(vm.cfg.bpm)}", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
@@ -328,25 +315,33 @@ fun TempoSection(vm: MetronomeViewModel) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun BeatColumn(vm: MetronomeViewModel, b: Int) {
+fun BeatColumn(vm: MetronomeViewModel, b: Int, colW: Dp) {
     val cfg = vm.cfg
     val subs = cfg.subs.getOrElse(b) { 1 }.coerceAtLeast(1)
     val current = vm.currentBeat == b
-    val w = (max(3, subs) * 24).dp
+    val pad = (colW * 0.06f).coerceAtMost(6.dp)
+    val inner = (colW - pad * 2).coerceAtLeast(8.dp)
+    val iconH = (inner * 1.2f).coerceIn(28.dp, 52.dp)
+    val gap = 2.dp
+    val btnW = ((inner - gap * (subs - 1)) / subs).coerceAtMost(24.dp).coerceAtLeast(3.dp)
+    val btnH = btnW.coerceIn(14.dp, 22.dp)
     val isStart = b in cfg.sig.groupStarts(cfg.grouping)
+    val small = (colW.value * 0.3f).coerceIn(8f, 12f).sp
 
     Column(
         Modifier
-            .clip(RoundedCornerShape(10.dp))
+            .width(colW)
+            .clip(RoundedCornerShape(8.dp))
             .background(Color.White.copy(alpha = if (current) 0.10f else 0.04f))
-            .padding(6.dp),
+            .padding(pad),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // Tap: change subdivision · Long-press: accent the first subdivision
+        // Toucher : changer la subdivision · Appui long : accentuer la première subdivision
         Box(
             Modifier
-                .size(w, 50.dp)
+                .fillMaxWidth()
+                .height(iconH)
                 .combinedClickable(
                     onClick = { vm.cycleSub(b) },
                     onLongClick = { vm.toggleNote(b, 0, NoteState.ACCENT) }
@@ -355,45 +350,52 @@ fun BeatColumn(vm: MetronomeViewModel, b: Int) {
             NoteIcon(subs, if (current) Orange else Color.White.copy(alpha = 0.92f), Modifier.fillMaxSize())
             if (subs == 3) {
                 Text(
-                    "3", fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                    "3", fontSize = small, fontWeight = FontWeight.Bold,
                     color = if (current) Orange else Color.White,
                     modifier = Modifier.align(Alignment.TopCenter)
                 )
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
             for (k in 0 until subs) {
                 val st = cfg.state(b, k)
                 val live = current && vm.currentSub == k
                 Column(
                     Modifier
-                        .clip(RoundedCornerShape(5.dp))
-                        .background(if (live) Orange.copy(alpha = 0.25f) else Color.Transparent)
-                        .padding(1.dp),
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(if (live) Orange.copy(alpha = 0.25f) else Color.Transparent),
                     verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    MiniButton(">", st == NoteState.ACCENT, Orange) { vm.toggleNote(b, k, NoteState.ACCENT) }
-                    MiniButton("‖", st == NoteState.REST, Color.Gray) { vm.toggleNote(b, k, NoteState.REST) }
+                    MiniButton(">", st == NoteState.ACCENT, Orange, btnW, btnH) {
+                        vm.toggleNote(b, k, NoteState.ACCENT)
+                    }
+                    MiniButton("‖", st == NoteState.REST, Color.Gray, btnW, btnH) {
+                        vm.toggleNote(b, k, NoteState.REST)
+                    }
                 }
             }
         }
         Text(
-            "${b + 1}", fontSize = 11.sp,
+            "${b + 1}", fontSize = small,
             fontWeight = if (isStart) FontWeight.Bold else FontWeight.Normal,
             color = if (isStart) Orange else Color.White.copy(alpha = 0.5f)
         )
     }
 }
 
+/** Toutes les pulsations sont visibles : plus il y en a, plus elles sont petites. */
 @Composable
 fun BeatsRow(vm: MetronomeViewModel) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
-    ) {
-        for (b in 0 until vm.cfg.sig.beats) BeatColumn(vm, b)
+    val n = vm.cfg.sig.beats
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val spacing = if (n > 8) 3.dp else 6.dp
+        val colW = ((maxWidth - spacing * (n - 1)) / n).coerceAtMost(88.dp)
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(spacing, Alignment.CenterHorizontally)
+        ) {
+            for (b in 0 until n) BeatColumn(vm, b, colW)
+        }
     }
 }
 
@@ -409,22 +411,25 @@ fun AutoPanel(vm: MetronomeViewModel) {
     ) {
         Pill("AUTO", on = c.autoOn) { vm.toggleAuto() }
         if (c.autoMode == AutoMode.MUTE) {
-            Pill("MUTE") { vm.toggleAutoMode() }
-            Tag("play")
+            Pill("SILENCE") { vm.toggleAutoMode() }
+            Tag("jouer")
             ScrubNumber(c.playBars, { vm.setPlayBars(it) }, 1..99, 15.sp, 36.dp, pxPerStep = 28f,
                 onEditing = { vm.typing = it })
-            Tag("bars · mute")
+            Tag("mes. ·")
+            Tag(if (c.muteRandom) "silence 1 à" else "silence")
             ScrubNumber(c.muteBars, { vm.setMuteBars(it) }, 1..99, 15.sp, 36.dp, pxPerStep = 28f,
                 onEditing = { vm.typing = it })
-            Tag("bars")
+            Tag("mes.")
+            Pill("ALÉAT.", on = c.muteRandom) { vm.toggleMuteRandom() }
         } else {
-            Pill("ADD") { vm.toggleAutoMode() }
+            Pill("AJOUT") { vm.toggleAutoMode() }
+            Pill("±") { vm.setAddBpm(-c.addBpm) }
             ScrubNumber(c.addBpm, { vm.setAddBpm(it) }, -50..50, 15.sp, 44.dp, pxPerStep = 28f, signed = true,
                 onEditing = { vm.typing = it })
-            Tag("BPM every")
+            Tag("BPM toutes les")
             ScrubNumber(c.addEvery, { vm.setAddEvery(it) }, 1..999, 15.sp, 44.dp, pxPerStep = 28f,
                 onEditing = { vm.typing = it })
-            Pill(if (c.addUnit == AddUnit.BAR) "BAR" else "SEC") { vm.toggleAddUnit() }
+            Pill(if (c.addUnit == AddUnit.BAR) "MES." else "SEC") { vm.toggleAddUnit() }
         }
     }
 }
@@ -438,7 +443,7 @@ fun PresetsRow(vm: MetronomeViewModel) {
                 val filled = vm.presets[i] != null
                 Box(
                     Modifier
-                        .size(width = 34.dp, height = 38.dp)
+                        .size(width = 32.dp, height = 38.dp)
                         .clip(RoundedCornerShape(7.dp))
                         .background(Color.White.copy(alpha = if (filled) 0.18f else 0.06f))
                         .border(
@@ -454,7 +459,8 @@ fun PresetsRow(vm: MetronomeViewModel) {
             }
         }
         Text(
-            "Tap: load · Long-press: save", color = Color.White.copy(alpha = 0.45f), fontSize = 11.sp
+            "Toucher : charger · Appui long : enregistrer",
+            color = Color.White.copy(alpha = 0.45f), fontSize = 11.sp
         )
     }
 }
@@ -462,38 +468,27 @@ fun PresetsRow(vm: MetronomeViewModel) {
 @Composable
 fun Transport(vm: MetronomeViewModel, onSettings: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                if (vm.muted) "🔇" else "🔊", fontSize = 20.sp,
-                modifier = Modifier.clickable { vm.toggleMute() }.padding(end = 6.dp)
-            )
-            Slider(
-                value = vm.volume, onValueChange = { vm.updateVolume(it) }, valueRange = 0f..1f,
-                colors = SliderDefaults.colors(thumbColor = Orange, activeTrackColor = Orange),
-                modifier = Modifier.weight(1f)
-            )
-        }
+        Spacer(Modifier.weight(1f))
         Box(
             Modifier
-                .padding(horizontal = 12.dp)
-                .size(68.dp)
+                .size(72.dp)
                 .clip(CircleShape)
                 .background(Orange)
                 .clickable { vm.toggle() },
             contentAlignment = Alignment.Center
         ) {
-            Text(if (vm.isPlaying) "■" else "▶", fontSize = 28.sp, color = Color.Black)
+            Text(if (vm.isPlaying) "■" else "▶", fontSize = 30.sp, color = Color.Black)
         }
-        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-            Text("⤢", fontSize = 24.sp, color = Color.White,
-                modifier = Modifier.clickable { vm.toggleFullscreen() }.padding(8.dp))
-            Text("⚙", fontSize = 24.sp, color = Color.White,
-                modifier = Modifier.clickable(onClick = onSettings).padding(8.dp))
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+            Text(
+                "⚙", fontSize = 26.sp, color = Color.White,
+                modifier = Modifier.clickable(onClick = onSettings).padding(10.dp)
+            )
         }
     }
 }
 
-// ------------------------------------------------------------------ settings
+// ------------------------------------------------------------------ réglages
 
 @Composable
 fun <T> PickerRow(label: String, current: String, options: List<Pair<String, T>>, onPick: (T) -> Unit) {
@@ -515,23 +510,23 @@ fun <T> PickerRow(label: String, current: String, options: List<Pair<String, T>>
 fun SettingsDialog(vm: MetronomeViewModel, onClose: () -> Unit) {
     LaunchedEffect(Unit) { vm.refreshDevices() }
     val panLabel = when {
-        kotlin.math.abs(vm.pan) < 0.05f -> "C"
-        vm.pan < 0 -> "L${(-vm.pan * 100).toInt()}"
-        else -> "R${(vm.pan * 100).toInt()}"
+        abs(vm.pan) < 0.05f -> "C"
+        vm.pan < 0 -> "G${(-vm.pan * 100).toInt()}"
+        else -> "D${(vm.pan * 100).toInt()}"
     }
     AlertDialog(
         onDismissRequest = onClose,
-        confirmButton = { TextButton(onClick = onClose) { Text("Close", color = Orange) } },
-        title = { Text("Settings") },
+        confirmButton = { TextButton(onClick = onClose) { Text("Fermer", color = Orange) } },
+        title = { Text("Réglages") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 PickerRow(
-                    "Sound", vm.sound.label,
+                    "Son", vm.sound.label,
                     SoundKind.values().map { it.label to it }
                 ) { vm.setSoundKind(it) }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Pan", Modifier.width(90.dp), fontSize = 14.sp)
+                    Text("Balance", Modifier.width(90.dp), fontSize = 14.sp)
                     Slider(
                         value = vm.pan, onValueChange = { vm.updatePan(it) }, valueRange = -1f..1f,
                         colors = SliderDefaults.colors(thumbColor = Orange, activeTrackColor = Orange),
@@ -541,19 +536,19 @@ fun SettingsDialog(vm: MetronomeViewModel, onClose: () -> Unit) {
                 }
 
                 PickerRow(
-                    "Output",
-                    if (vm.deviceName.isEmpty()) "System default" else vm.deviceName,
-                    listOf("System default" to "") + vm.devices.map { vm.deviceLabel(it) to vm.deviceLabel(it) }
+                    "Sortie",
+                    if (vm.deviceName.isEmpty()) "Par défaut" else vm.deviceName,
+                    listOf("Par défaut" to "") + vm.devices.map { vm.deviceLabel(it) to vm.deviceLabel(it) }
                 ) { vm.setOutputDevice(it) }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Keep screen on while playing", Modifier.weight(1f), fontSize = 14.sp)
-                    Switch(checked = vm.keepScreenOn, onCheckedChange = { vm.updateKeepScreenOn(it) })
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Click light", Modifier.weight(1f), fontSize = 14.sp)
+                    Text("Lumière du clic", Modifier.weight(1f), fontSize = 14.sp)
                     Switch(checked = vm.lightEnabled, onCheckedChange = { vm.toggleLight() })
                 }
+                Text(
+                    "Le volume se règle avec les touches de volume du téléphone.",
+                    fontSize = 12.sp, color = Color.White.copy(alpha = 0.6f)
+                )
             }
         }
     )

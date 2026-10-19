@@ -19,7 +19,7 @@ import kotlin.random.Random
 // ---------------------------------------------------------------- Sounds
 
 enum class SoundKind(val label: String) {
-    CLICK("Click"), WOOD("Wood block"), BEEP("Beep"), COWBELL("Cowbell"), HIHAT("Hi-hat"), CLAVE("Clave");
+    CLICK("Clic"), WOOD("Bloc de bois"), BEEP("Bip"), COWBELL("Cloche"), HIHAT("Charleston"), CLAVE("Claves");
 
     fun render(accent: Boolean, sr: Int): FloatArray = when (this) {
         CLICK -> synth(listOf((if (accent) 1800.0 else 1200.0) to 1.0), 0.05, 90.0, 0.0, sr)
@@ -82,7 +82,7 @@ class ClickEngine {
     @Volatile var pan = 0f
     @Volatile private var normal = FloatArray(0)
     @Volatile private var accent = FloatArray(0)
-    @Volatile private var volume = 0.8f
+    @Volatile private var volume = 1f
     @Volatile private var track: AudioTrack? = null
     @Volatile private var device: AudioDeviceInfo? = null
     @Volatile private var running = false
@@ -182,6 +182,8 @@ class ClickEngine {
         var barsSinceAdd = 0
         var lastAddFrame = 0L
         var mutedBar = false
+        var silentRemaining = 0
+        var playedSince = 0
 
         t.play()
 
@@ -194,9 +196,25 @@ class ClickEngine {
                 if (c.autoOn) {
                     when (c.autoMode) {
                         AutoMode.MUTE -> {
-                            val total = max(1, c.playBars + c.muteBars)
-                            mutedBar = (cycleBar % total) >= c.playBars
-                            cycleBar++
+                            if (c.muteRandom) {
+                                // Silences aléatoires de 1 à muteBars mesures, après au moins playBars mesures jouées.
+                                if (silentRemaining > 0) {
+                                    mutedBar = true
+                                    silentRemaining--
+                                } else if (playedSince >= c.playBars && Random.nextBoolean()) {
+                                    val len = Random.nextInt(1, max(1, c.muteBars) + 1)
+                                    mutedBar = true
+                                    silentRemaining = len - 1
+                                    playedSince = 0
+                                } else {
+                                    mutedBar = false
+                                    playedSince++
+                                }
+                            } else {
+                                val total = max(1, c.playBars + c.muteBars)
+                                mutedBar = (cycleBar % total) >= c.playBars
+                                cycleBar++
+                            }
                         }
                         AutoMode.ADD -> {
                             mutedBar = false
@@ -211,6 +229,7 @@ class ClickEngine {
                     }
                 } else {
                     mutedBar = false; cycleBar = 0; barsSinceAdd = 0
+                    silentRemaining = 0; playedSince = 0
                 }
                 barsPlayed++
             }
