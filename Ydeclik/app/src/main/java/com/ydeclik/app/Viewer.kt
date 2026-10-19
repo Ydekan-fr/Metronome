@@ -97,7 +97,9 @@ fun ZoomImage(
         val geo by rememberUpdatedState(floatArrayOf(vw, vh, baseW, baseH))
 
         fun clampAxis(o: Float, content: Float, view: Float): Float =
-            if (content <= view) (view - content) / 2f else o.coerceIn(view - content, 0f)
+            if (content <= view) (view - content) / 2f
+            else if (o.isNaN()) 0f
+            else o.coerceIn(minOf(view - content, 0f), 0f)
 
         LaunchedEffect(zoom > 1.01f) { curZoomed(zoom > 1.01f) }
         LaunchedEffect(zoom) {
@@ -135,14 +137,16 @@ fun ZoomImage(
                                     if ((horizontal && canX) || (!horizontal && canY)) handling = true else break
                                 }
                             }
-                            if (handling) {
+                            if (handling && pressed > 0 && cen.x.isFinite() && cen.y.isFinite() && zc.isFinite() && pan.x.isFinite() && pan.y.isFinite()) {
                                 val nz = (zoom * zc).coerceIn(1f, 4f)
                                 val r = nz / zoom
                                 val nx = cen.x - (cen.x - ox) * r + pan.x
                                 val ny = cen.y - (cen.y - oy) * r + pan.y
-                                zoom = nz
-                                ox = clampAxis(nx, g[2] * nz, g[0])
-                                oy = clampAxis(ny, g[3] * nz, g[1])
+                                if (nx.isFinite() && ny.isFinite()) {
+                                    zoom = nz
+                                    ox = clampAxis(nx, g[2] * nz, g[0])
+                                    oy = clampAxis(ny, g[3] * nz, g[1])
+                                }
                                 ev.changes.forEach { if (it.positionChanged()) it.consume() }
                             }
                         } while (ev.changes.any { it.pressed })

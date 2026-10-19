@@ -72,6 +72,11 @@ fun YdeclikApp(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: SetlistViewMod
         }
     }
 
+    // Rapport du dernier plantage, s'il y en a un.
+    val appCtx = LocalContext.current
+    var crash by remember { mutableStateOf(appCtx.getSharedPreferences("ydeclik_crash", 0).getString("trace", null)) }
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+
     BackHandler(enabled = ex.stack.size > 1) { ex.back() }
     BackHandler(enabled = ex.immersive) { ex.immersive = false }
 
@@ -91,6 +96,30 @@ fun YdeclikApp(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: SetlistViewMod
         }
     }
     if (ex.settingsOpen) SettingsDialog(vm) { ex.settingsOpen = false }
+    crash?.let { trace ->
+        val close = {
+            appCtx.getSharedPreferences("ydeclik_crash", 0).edit().remove("trace").apply()
+            crash = null
+        }
+        AlertDialog(
+            onDismissRequest = close,
+            title = { Text("L'application s'est fermée") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text("Touchez « Copier », puis envoyez ce texte pour que le problème soit corrigé.", fontSize = 13.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text(trace.take(2500), fontSize = 9.sp, color = Color.White.copy(alpha = 0.7f))
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(trace.take(6000)))
+                    close()
+                }) { Text("Copier", color = Orange) }
+            },
+            dismissButton = { TextButton(onClick = close) { Text("Fermer") } }
+        )
+    }
 }
 
 @Composable

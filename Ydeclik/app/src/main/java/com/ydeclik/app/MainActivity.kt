@@ -33,6 +33,16 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // En cas de plantage, la trace est enregistrée et affichée au lancement suivant (pour la transmettre).
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            runCatching {
+                getSharedPreferences("ydeclik_crash", MODE_PRIVATE).edit()
+                    .putString("trace", android.util.Log.getStackTraceString(e)).commit()
+            }
+            previous?.uncaughtException(t, e)
+        }
+
         // L'écran ne se met jamais en veille pendant l'utilisation de l'appli.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Les touches de volume du téléphone règlent le volume du métronome.
