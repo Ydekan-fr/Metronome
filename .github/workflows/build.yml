@@ -1,0 +1,39 @@
+name: Build
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  mac:
+    runs-on: macos-14   # Apple Silicon (M1)
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Metronome.app
+        working-directory: Metronome
+        run: |
+          chmod +x build_app.sh
+          ./build_app.sh
+          ditto -c -k --keepParent Metronome.app ../Metronome-mac.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Metronome-mac
+          path: Metronome-mac.zip
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+      - name: Build APK
+        working-directory: Ydeclik
+        run: gradle assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ydeclik-apk
+          path: Ydeclik/app/build/outputs/apk/debug/app-debug.apk
