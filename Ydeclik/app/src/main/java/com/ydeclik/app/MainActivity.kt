@@ -22,6 +22,7 @@ import androidx.core.content.ContextCompat
 class MainActivity : ComponentActivity() {
 
     private val vm: MetronomeViewModel by viewModels()
+    private val ex: ExerciseViewModel by viewModels()
 
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -34,7 +35,7 @@ class MainActivity : ComponentActivity() {
         ) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        setContent { YdeclikTheme { YdeclikApp(vm) } }
+        setContent { YdeclikTheme { YdeclikApp(vm, ex) } }
     }
 
     /** Hardware keyboard shortcuts (tablets, Chromebooks, Bluetooth keyboards). */

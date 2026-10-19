@@ -95,46 +95,6 @@ fun YdeclikTheme(content: @Composable () -> Unit) {
     )
 }
 
-// ------------------------------------------------------------------ root
-
-@Composable
-fun YdeclikApp(vm: MetronomeViewModel) {
-    val view = LocalView.current
-    SideEffect { view.keepScreenOn = vm.isPlaying && vm.keepScreenOn }
-    LaunchedEffect(vm.fullscreen) {
-        val window = (view.context as? Activity)?.window ?: return@LaunchedEffect
-        val c = WindowCompat.getInsetsController(window, view)
-        if (vm.fullscreen) {
-            c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            c.hide(WindowInsetsCompat.Type.systemBars())
-        } else {
-            c.show(WindowInsetsCompat.Type.systemBars())
-        }
-    }
-
-    var showSettings by remember { mutableStateOf(false) }
-
-    Surface(color = Bg, modifier = Modifier.fillMaxSize()) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .safeDrawingPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            TopBar(vm)
-            TempoSection(vm)
-            BeatsRow(vm)
-            AutoPanel(vm)
-            PresetsRow(vm)
-            Transport(vm) { showSettings = true }
-        }
-    }
-    if (showSettings) SettingsDialog(vm) { showSettings = false }
-}
-
 // ------------------------------------------------------------------ helpers
 
 @Composable
