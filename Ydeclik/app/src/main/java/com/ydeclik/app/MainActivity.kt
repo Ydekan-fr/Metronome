@@ -49,6 +49,7 @@ class MainActivity : ComponentActivity() {
         volumeControlStream = AudioManager.STREAM_MUSIC
 
         ex.playingProvider = { vm.isPlaying }
+        ex.onTimerFinished = { if (vm.isPlaying) vm.stop() }
 
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)

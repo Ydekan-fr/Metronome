@@ -123,6 +123,12 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
     var timerFinished by mutableStateOf(false); private set
     private var timerJob: Job? = null
 
+    /** Sonnerie de fin de minuteur (null = alarme par défaut du téléphone). */
+    var alarmUri by mutableStateOf<String?>(null); private set
+
+    /** Appelé à la fin du minuteur : arrête le métronome. */
+    var onTimerFinished: () -> Unit = {}
+
     /** Affiche la boîte de réglages (accessible depuis le menu). */
     var settingsOpen by mutableStateOf(false)
 
@@ -207,6 +213,7 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
             autoApplyBpm = prefs.getBoolean("autoApply", true)
             timerMin = prefs.getInt("timerMin", 0)
             timerRemaining = timerMin * 60
+            alarmUri = prefs.getString("alarmUri", null)
             folderUri = prefs.getString("folderUri", null)
             folderName = prefs.getString("folderName", "") ?: ""
             sortMode = SortMode.valueOf(prefs.getString("sort", "NAME") ?: "NAME")
@@ -318,11 +325,17 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
                 if (left <= 0) {
                     timerRunning = false
                     timerFinished = true
-                    alertTimeUp(app)
+                    onTimerFinished()
+                    alertTimeUp(app, alarmUri)
                     break
                 }
             }
         }
+    }
+
+    fun updateAlarm(uri: String?) {
+        alarmUri = uri
+        prefs.edit().apply { if (uri == null) remove("alarmUri") else putString("alarmUri", uri) }.apply()
     }
 
     fun timerToggle() {

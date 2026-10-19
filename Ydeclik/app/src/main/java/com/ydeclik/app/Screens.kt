@@ -95,7 +95,7 @@ fun YdeclikApp(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: SetlistViewMod
             }
         }
     }
-    if (ex.settingsOpen) SettingsDialog(vm) { ex.settingsOpen = false }
+    if (ex.settingsOpen) SettingsDialog(vm, ex) { ex.settingsOpen = false }
     crash?.let { trace ->
         val close = {
             appCtx.getSharedPreferences("ydeclik_crash", 0).edit().remove("trace").apply()

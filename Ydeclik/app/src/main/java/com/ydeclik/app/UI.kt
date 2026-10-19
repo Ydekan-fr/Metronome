@@ -15,6 +15,7 @@ import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -513,14 +514,30 @@ fun <T> PickerRow(label: String, current: String, options: List<Pair<String, T>>
 }
 
 @Composable
-fun SettingsDialog(vm: MetronomeViewModel, onClose: () -> Unit) {
+fun SettingsDialog(vm: MetronomeViewModel, ex: ExerciseViewModel, onClose: () -> Unit) {
     LaunchedEffect(Unit) { vm.refreshDevices() }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val alarmTitle = remember(ex.alarmUri) {
+        runCatching {
+            val u = ex.alarmUri?.let { android.net.Uri.parse(it) }
+                ?: android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_ALARM)
+            android.media.RingtoneManager.getRingtone(ctx, u).getTitle(ctx)
+        }.getOrDefault("Par défaut")
+    }
+    val ringtonePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { res ->
+        if (res.resultCode == android.app.Activity.RESULT_OK) {
+            val picked = res.data?.getParcelableExtra<android.net.Uri>(android.media.RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+            ex.updateAlarm(picked?.toString())
+        }
+    }
     AlertDialog(
         onDismissRequest = onClose,
         confirmButton = { TextButton(onClick = onClose) { Text("Fermer", color = Orange) } },
         title = { Text("Réglages") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 PickerRow(
                     "Son", vm.sound.label,
                     SoundKind.values().map { it.label to it }
@@ -533,6 +550,28 @@ fun SettingsDialog(vm: MetronomeViewModel, onClose: () -> Unit) {
                 ) { vm.setOutputDevice(it) }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Sonnerie du minuteur", Modifier.weight(1f), fontSize = 14.sp)
+                    TextButton(onClick = {
+                        val i = android.content.Intent(android.media.RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                            putExtra(
+                                android.media.RingtoneManager.EXTRA_RINGTONE_TYPE,
+                                android.media.RingtoneManager.TYPE_ALARM or android.media.RingtoneManager.TYPE_RINGTONE
+                            )
+                            putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                            putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+                            putExtra(
+                                android.media.RingtoneManager.EXTRA_RINGTONE_EXISTING_URI,
+                                ex.alarmUri?.let { android.net.Uri.parse(it) }
+                            )
+                        }
+                        ringtonePicker.launch(i)
+                    }) { Text("$alarmTitle ▾", color = Orange, maxLines = 1) }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Tester la sonnerie", Modifier.weight(1f), fontSize = 14.sp)
+                    TextButton(onClick = { alertTimeUp(ctx, ex.alarmUri) }) { Text("▶ Écouter", color = Orange) }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Lumière du clic", Modifier.weight(1f), fontSize = 14.sp)
                     Switch(checked = vm.lightEnabled, onCheckedChange = { vm.toggleLight() })
                 }
@@ -540,6 +579,7 @@ fun SettingsDialog(vm: MetronomeViewModel, onClose: () -> Unit) {
                     "Le volume se règle avec les touches de volume du téléphone.",
                     fontSize = 12.sp, color = Color.White.copy(alpha = 0.6f)
                 )
+                Text("Version du 19/10 – 23h (minuteur + sonnerie)", fontSize = 10.sp, color = Color.White.copy(alpha = 0.35f))
             }
         }
     )
