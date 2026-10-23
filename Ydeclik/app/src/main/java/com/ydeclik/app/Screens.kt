@@ -271,6 +271,7 @@ fun ExercisesScreen(ex: ExerciseViewModel) {
     }
     var folderMenu by remember { mutableStateOf(false) }
     var showRelink by remember { mutableStateOf(false) }
+    var showOptions by remember { mutableStateOf(false) }
     val relinkTree = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { u ->
         if (u != null) ex.relinkFromTree(u)
     }
@@ -282,14 +283,8 @@ fun ExercisesScreen(ex: ExerciseViewModel) {
         HeaderBar(ex, "Exercices")
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Pill("+ Fichiers") { picker.launch(arrayOf("image/jpeg", "image/png", "application/pdf")) }
-            Pill("Album : ${ex.album?.name?.ifBlank { "?" } ?: "aucun"}") {
-                if (hasMediaPermission(ctx)) {
-                    ex.refreshAlbums(); showAlbums = true
-                } else {
-                    permLauncher.launch(mediaPermissions())
-                }
-            }
+            Pill("⚙ Options") { showOptions = true }
+            TimerPill(ex)
         }
         if (ex.missingCount > 0) {
             Spacer(Modifier.height(6.dp))
@@ -303,27 +298,6 @@ fun ExercisesScreen(ex: ExerciseViewModel) {
         }
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Pill(if (ex.folderUri != null) "Dossier : ${ex.folderName.ifBlank { "?" }}" else "+ Dossier", on = ex.folderUri != null) {
-                if (ex.folderUri != null) folderMenu = true else folderPicker.launch(null)
-            }
-            if (ex.folderUri != null) Pill("↻ Actualiser") { ex.refreshFolder() }
-            TimerPill(ex)
-        }
-        if (ex.folderUri == null) {
-            Text(
-                "« + Dossier » : choisissez un sous-dossier du téléphone (par exemple Documents/Ydeklik), " +
-                    "pas la racine, « Téléchargements » ni Dropbox. Il est relu à chaque ouverture.",
-                fontSize = 11.sp, color = Pal.fg.copy(alpha = 0.55f), modifier = Modifier.padding(top = 4.dp)
-            )
-        }
-        Row(
-            Modifier.fillMaxWidth().padding(vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Recharger le dernier BPM à l'ouverture", Modifier.weight(1f), fontSize = 13.sp)
-            Switch(checked = ex.autoApplyBpm, onCheckedChange = { ex.updateAutoApply(it) })
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Tag("TRI")
             Pill("A–Z", on = ex.sortMode == SortMode.NAME) { ex.updateSort(SortMode.NAME) }
             Pill("Récents", on = ex.sortMode == SortMode.RECENT) { ex.updateSort(SortMode.RECENT) }
@@ -336,7 +310,7 @@ fun ExercisesScreen(ex: ExerciseViewModel) {
         }
         if (lib.isEmpty()) {
             Text(
-                "Aucun exercice.\nTouchez « + Fichiers » pour ajouter des JPG, PNG ou PDF, ou choisissez un album photo.",
+                "Aucun exercice.\nTouchez « Options » pour ajouter des JPG, PNG ou PDF, ou choisir un album photo ou un dossier.",
                 color = Pal.fg.copy(alpha = 0.6f), fontSize = 14.sp,
                 modifier = Modifier.padding(top = 24.dp)
             )
@@ -354,6 +328,58 @@ fun ExercisesScreen(ex: ExerciseViewModel) {
         }
     }
 
+    if (showOptions) {
+        AlertDialog(
+            onDismissRequest = { showOptions = false },
+            title = { Text("Options des exercices") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    SRow("Fichiers") {
+                        Pill("+ Ajouter") {
+                            showOptions = false
+                            picker.launch(arrayOf("image/jpeg", "image/png", "application/pdf"))
+                        }
+                    }
+                    SRow("Album") {
+                        Pill("${ex.album?.name?.ifBlank { "?" } ?: "Choisir"}", modifier = Modifier.weight(1f, fill = false)) {
+                            showOptions = false
+                            if (hasMediaPermission(ctx)) {
+                                ex.refreshAlbums(); showAlbums = true
+                            } else {
+                                permLauncher.launch(mediaPermissions())
+                            }
+                        }
+                    }
+                    SRow("Dossier") {
+                        Pill(
+                            if (ex.folderUri != null) ex.folderName.ifBlank { "?" } else "+ Choisir",
+                            on = ex.folderUri != null,
+                            modifier = Modifier.weight(1f, fill = false)
+                        ) {
+                            showOptions = false
+                            if (ex.folderUri != null) folderMenu = true else folderPicker.launch(null)
+                        }
+                        if (ex.folderUri != null) {
+                            Spacer(Modifier.width(8.dp))
+                            Pill("↻ Actualiser") { ex.refreshFolder() }
+                        }
+                    }
+                    if (ex.folderUri == null) {
+                        Text(
+                            "Dossier : choisissez un sous-dossier du téléphone (par exemple Documents/Ydeklik), " +
+                                "pas la racine, « Téléchargements » ni Dropbox. Il est relu à chaque ouverture.",
+                            fontSize = 11.sp, color = Pal.fg.copy(alpha = 0.55f)
+                        )
+                    }
+                    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Recharger le dernier BPM à l'ouverture", Modifier.weight(1f), fontSize = 14.sp)
+                        Switch(checked = ex.autoApplyBpm, onCheckedChange = { ex.updateAutoApply(it) })
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showOptions = false }) { Text("Fermer", color = Accent) } }
+        )
+    }
     if (showRelink) {
         AlertDialog(
             onDismissRequest = { showRelink = false },

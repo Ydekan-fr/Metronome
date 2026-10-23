@@ -91,15 +91,18 @@ fun YdeclikTheme(content: @Composable () -> Unit) {
 // ------------------------------------------------------------------ éléments communs
 
 @Composable
-fun Pill(text: String, on: Boolean = false, onClick: () -> Unit) {
+fun Pill(text: String, on: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
-        Modifier
+        modifier
             .clip(RoundedCornerShape(50))
             .background(if (on) Accent else Pal.fg.copy(alpha = 0.14f))
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp)
     ) {
-        Text(text, color = if (on) Color.White else Pal.fg, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        Text(
+            text, color = if (on) Color.White else Pal.fg, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+            maxLines = 1, overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -522,7 +525,7 @@ fun Transport(vm: MetronomeViewModel) {
 
 /** Ligne compacte de réglage : libellé à gauche, contrôle à droite. */
 @Composable
-private fun SRow(label: String, content: @Composable RowScope.() -> Unit) {
+fun SRow(label: String, content: @Composable RowScope.() -> Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.width(92.dp), fontSize = 14.sp, maxLines = 1)
         content()
@@ -607,11 +610,6 @@ fun SettingsDialog(vm: MetronomeViewModel, ex: ExerciseViewModel, onClose: () ->
                     "Son", vm.sound.label,
                     SoundKind.values().map { it.label to it }
                 ) { vm.setSoundKind(it) }
-                PickerRow(
-                    "Sortie",
-                    if (vm.deviceName.isEmpty()) "Par défaut" else vm.deviceName,
-                    listOf("Par défaut" to "") + vm.devices.map { vm.deviceLabel(it) to vm.deviceLabel(it) }
-                ) { vm.setOutputDevice(it) }
                 SRow("Lumière du clic") {
                     Spacer(Modifier.weight(1f))
                     Switch(checked = vm.lightEnabled, onCheckedChange = { vm.toggleLight() })
@@ -653,7 +651,7 @@ fun SettingsDialog(vm: MetronomeViewModel, ex: ExerciseViewModel, onClose: () ->
                 }
                 backupMsg?.let { Text(it, fontSize = 12.sp, color = Accent) }
                 Text(
-                    "Volume : touches du téléphone. Version V11 (Ydeklik)",
+                    "Volume : touches du téléphone. Version V13 (Ydeklik)",
                     fontSize = 10.sp, color = Pal.fg.copy(alpha = 0.4f), modifier = Modifier.padding(top = 6.dp)
                 )
             }
