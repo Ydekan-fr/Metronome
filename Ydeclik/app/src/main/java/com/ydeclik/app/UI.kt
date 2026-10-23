@@ -39,6 +39,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
@@ -519,13 +520,24 @@ fun Transport(vm: MetronomeViewModel) {
 
 // ------------------------------------------------------------------ réglages
 
+/** Ligne compacte de réglage : libellé à gauche, contrôle à droite. */
+@Composable
+private fun SRow(label: String, content: @Composable RowScope.() -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.width(92.dp), fontSize = 14.sp, maxLines = 1)
+        content()
+    }
+}
+
 @Composable
 fun <T> PickerRow(label: String, current: String, options: List<Pair<String, T>>, onPick: (T) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.width(90.dp), fontSize = 14.sp)
-        Box {
-            TextButton(onClick = { open = true }) { Text("$current ▾", color = Accent) }
+    SRow(label) {
+        Box(Modifier.weight(1f)) {
+            Text(
+                "$current ▾", color = Accent, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.clickable { open = true }.padding(vertical = 8.dp)
+            )
             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                 options.forEach { (name, value) ->
                     DropdownMenuItem(text = { Text(name) }, onClick = { onPick(value); open = false })
@@ -585,63 +597,65 @@ fun SettingsDialog(vm: MetronomeViewModel, ex: ExerciseViewModel, onClose: () ->
         confirmButton = { TextButton(onClick = onClose) { Text("Fermer", color = Accent) } },
         title = { Text("Réglages") },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Apparence", Modifier.weight(1f), fontSize = 14.sp)
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                SRow("Apparence") {
                     Pill("Sombre", on = Pal.dark) { ex.updateDark(true) }
+                    Spacer(Modifier.width(8.dp))
                     Pill("Clair", on = !Pal.dark) { ex.updateDark(false) }
                 }
                 PickerRow(
                     "Son", vm.sound.label,
                     SoundKind.values().map { it.label to it }
                 ) { vm.setSoundKind(it) }
-
                 PickerRow(
                     "Sortie",
                     if (vm.deviceName.isEmpty()) "Par défaut" else vm.deviceName,
                     listOf("Par défaut" to "") + vm.devices.map { vm.deviceLabel(it) to vm.deviceLabel(it) }
                 ) { vm.setOutputDevice(it) }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Sonnerie du minuteur", Modifier.weight(1f), fontSize = 14.sp)
-                    TextButton(onClick = {
-                        val i = android.content.Intent(android.media.RingtoneManager.ACTION_RINGTONE_PICKER).apply {
-                            putExtra(
-                                android.media.RingtoneManager.EXTRA_RINGTONE_TYPE,
-                                android.media.RingtoneManager.TYPE_ALARM or android.media.RingtoneManager.TYPE_RINGTONE
-                            )
-                            putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
-                            putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
-                            putExtra(
-                                android.media.RingtoneManager.EXTRA_RINGTONE_EXISTING_URI,
-                                ex.alarmUri?.let { android.net.Uri.parse(it) }
-                            )
-                        }
-                        ringtonePicker.launch(i)
-                    }) { Text("$alarmTitle ▾", color = Accent, maxLines = 1) }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Tester la sonnerie", Modifier.weight(1f), fontSize = 14.sp)
-                    TextButton(onClick = { alertTimeUp(ctx, ex.alarmUri) }) { Text("▶ Écouter", color = Accent) }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Lumière du clic", Modifier.weight(1f), fontSize = 14.sp)
+                SRow("Lumière du clic") {
+                    Spacer(Modifier.weight(1f))
                     Switch(checked = vm.lightEnabled, onCheckedChange = { vm.toggleLight() })
                 }
-                Text(
-                    "Le volume se règle avec les touches de volume du téléphone.",
-                    fontSize = 12.sp, color = Pal.fg.copy(alpha = 0.6f)
-                )
-                Text("Sauvegarde (statistiques, progression, routines, setlists, fichiers)", fontSize = 13.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SRow("Sonnerie") {
+                    Text(
+                        "$alarmTitle ▾", color = Accent, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                val i = android.content.Intent(android.media.RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                                    putExtra(
+                                        android.media.RingtoneManager.EXTRA_RINGTONE_TYPE,
+                                        android.media.RingtoneManager.TYPE_ALARM or android.media.RingtoneManager.TYPE_RINGTONE
+                                    )
+                                    putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                                    putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+                                    putExtra(
+                                        android.media.RingtoneManager.EXTRA_RINGTONE_EXISTING_URI,
+                                        ex.alarmUri?.let { android.net.Uri.parse(it) }
+                                    )
+                                }
+                                ringtonePicker.launch(i)
+                            }
+                            .padding(vertical = 8.dp)
+                    )
+                    Text(
+                        "▶", color = Accent, fontSize = 18.sp,
+                        modifier = Modifier.clickable { alertTimeUp(ctx, ex.alarmUri) }.padding(8.dp)
+                    )
+                }
+                SRow("Sauvegarde") {
                     Pill("Exporter") {
                         val d = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())
-                        exportLauncher.launch("ydeclik-sauvegarde-$d.json")
+                        exportLauncher.launch("ydeklik-sauvegarde-$d.json")
                     }
+                    Spacer(Modifier.width(8.dp))
                     Pill("Importer") { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }
                 }
                 backupMsg?.let { Text(it, fontSize = 12.sp, color = Accent) }
-                Text("Version du 23/10 (Ydeklik, thème clair/sombre)", fontSize = 10.sp, color = Pal.fg.copy(alpha = 0.35f))
+                Text(
+                    "Volume : touches du téléphone. Version du 23/10 (Ydeklik)",
+                    fontSize = 10.sp, color = Pal.fg.copy(alpha = 0.4f), modifier = Modifier.padding(top = 6.dp)
+                )
             }
         }
     )
