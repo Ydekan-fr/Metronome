@@ -393,6 +393,12 @@ fun ExercisesScreen(ex: ExerciseViewModel) {
                             "et statistiques, progression et routines sont conservées.",
                         fontSize = 13.sp
                     )
+                    if (ex.missingNames.isNotEmpty()) {
+                        Text("Fichiers manquants :", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Column(Modifier.heightIn(max = 140.dp).verticalScroll(rememberScrollState())) {
+                            ex.missingNames.forEach { Text("• $it", fontSize = 12.sp, color = Pal.fg.copy(alpha = 0.75f)) }
+                        }
+                    }
                     Pill("Choisir un dossier") { showRelink = false; relinkTree.launch(null) }
                     Pill("Choisir des fichiers") {
                         showRelink = false

@@ -558,6 +558,7 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
 
     /** Nombre de fichiers (importés ou utilisés dans une routine) qui ne peuvent plus être ouverts. */
     var missingCount by mutableIntStateOf(0); private set
+    var missingNames by mutableStateOf(emptyList<String>()); private set
 
     /** Message de résultat du dernier reliage. */
     var relinkMessage by mutableStateOf<String?>(null)
@@ -583,8 +584,12 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             val uris = (imported.map { it.uri } + routines.flatMap { r -> r.items.map { it.uri } } +
                 programs.flatMap { p -> p.lines.filter { !it.isRoutine }.map { it.ref } }).toSet()
-            val n = uris.count { !isReadable(it) }
-            withContext(Dispatchers.Main) { missingCount = n }
+            val miss = uris.filter { !isReadable(it) }
+            val names = fileNameMap()
+            val labels = miss.map { u ->
+                names[u] ?: runCatching { Uri.decode(u).substringAfterLast('/').substringAfterLast(':') }.getOrDefault(u)
+            }.distinct().sorted()
+            withContext(Dispatchers.Main) { missingCount = miss.size; missingNames = labels }
         }
     }
 
