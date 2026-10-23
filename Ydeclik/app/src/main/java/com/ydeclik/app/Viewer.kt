@@ -84,7 +84,7 @@ fun ZoomImage(
     val curZoomed by rememberUpdatedState(onZoomed)
     val curSettled by rememberUpdatedState(onSettled)
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF0E0E10)).clipToBounds()) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(Pal.viewerBg).clipToBounds()) {
         val vw = constraints.maxWidth.toFloat()
         val vh = constraints.maxHeight.toFloat()
         val aspect = bitmap.height.toFloat() / bitmap.width.toFloat()
@@ -184,11 +184,11 @@ fun ImageViewer(uri: String, onDoubleTap: () -> Unit, onZoomed: (Boolean) -> Uni
     }
     val b = res.second
     when {
-        !res.first -> Box(Modifier.fillMaxSize().background(Color(0xFF0E0E10)), contentAlignment = Alignment.Center) {
-            Text("Chargement…", color = Color.White.copy(alpha = 0.5f))
+        !res.first -> Box(Modifier.fillMaxSize().background(Pal.viewerBg), contentAlignment = Alignment.Center) {
+            Text("Chargement…", color = Pal.fg.copy(alpha = 0.5f))
         }
-        b == null -> Box(Modifier.fillMaxSize().background(Color(0xFF0E0E10)), contentAlignment = Alignment.Center) {
-            Text("Impossible d'ouvrir ce fichier", color = Color.White.copy(alpha = 0.5f))
+        b == null -> Box(Modifier.fillMaxSize().background(Pal.viewerBg), contentAlignment = Alignment.Center) {
+            Text("Impossible d'ouvrir ce fichier", color = Pal.fg.copy(alpha = 0.5f))
         }
         else -> ZoomImage(b, uri, fitWidth = true, onDoubleTap = onDoubleTap, onZoomed = onZoomed)
     }
@@ -218,8 +218,8 @@ private fun PdfFitPage(
         }
         val b = bmp
         if (b == null) {
-            Box(Modifier.fillMaxSize().background(Color(0xFF0E0E10)), contentAlignment = Alignment.Center) {
-                Text("Chargement…", color = Color.White.copy(alpha = 0.5f))
+            Box(Modifier.fillMaxSize().background(Pal.viewerBg), contentAlignment = Alignment.Center) {
+                Text("Chargement…", color = Pal.fg.copy(alpha = 0.5f))
             }
         } else {
             ZoomImage(b, index, fitWidth = false, onDoubleTap = onDoubleTap, onZoomed = onZoomed,
@@ -248,8 +248,8 @@ fun PdfViewer(
     val curZoomed by rememberUpdatedState(onZoomed)
 
     if (doc == null) {
-        Box(Modifier.fillMaxSize().background(Color(0xFF0E0E10)), contentAlignment = Alignment.Center) {
-            Text("Chargement…", color = Color.White.copy(alpha = 0.5f))
+        Box(Modifier.fillMaxSize().background(Pal.viewerBg), contentAlignment = Alignment.Center) {
+            Text("Chargement…", color = Pal.fg.copy(alpha = 0.5f))
         }
     } else {
         val pager = rememberPagerState(initialPage = startPage.coerceIn(0, (doc.pageCount - 1).coerceAtLeast(0))) {
@@ -303,12 +303,12 @@ fun alertTimeUp(ctx: Context, uri: String? = null) {
 // ------------------------------------------------------------------ petit métronome (compact)
 
 @Composable
-private fun StatChip(label: String, value: String, modifier: Modifier = Modifier, color: Color = Color.White) {
+private fun StatChip(label: String, value: String, modifier: Modifier = Modifier, color: Color = Pal.fg) {
     Column(
         modifier.padding(horizontal = 6.dp, vertical = 1.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(label, fontSize = 9.sp, color = Color.White.copy(alpha = 0.55f), fontWeight = FontWeight.SemiBold)
+        Text(label, fontSize = 9.sp, color = Pal.fg.copy(alpha = 0.55f), fontWeight = FontWeight.SemiBold)
         Text(value, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = color)
     }
 }
@@ -323,7 +323,7 @@ fun MiniMetronome(vm: MetronomeViewModel, s: ExStats?, onEditFirst: () -> Unit, 
     Column(
         Modifier
             .fillMaxWidth()
-            .background(Color(0xFF1F1F22))
+            .background(Pal.surface2)
             .padding(horizontal = 10.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
@@ -332,19 +332,19 @@ fun MiniMetronome(vm: MetronomeViewModel, s: ExStats?, onEditFirst: () -> Unit, 
             StatChip("PREMIER", first?.toString() ?: "—", Modifier.clickable(onClick = onEditFirst))
             StatChip(
                 "DERNIER", last?.toString() ?: "—",
-                Modifier.clickable(enabled = last != null) { last?.let { vm.setBPM(it) } }, Orange
+                Modifier.clickable(enabled = last != null) { last?.let { vm.setBPM(it) } }, Accent
             )
             StatChip("CIBLE", target?.toString() ?: "—", Modifier.clickable(onClick = onEditTarget))
             Spacer(Modifier.weight(1f))
             if (first == null) {
-                Text("Appuyez sur ▶", fontSize = 11.sp, color = Color.White.copy(alpha = 0.5f))
+                Text("Appuyez sur ▶", fontSize = 11.sp, color = Pal.fg.copy(alpha = 0.5f))
             } else {
                 val delta = bpm - first
                 val pct = if (first > 0) delta * 100 / first else 0
                 val col = when {
                     delta > 0 -> Color(0xFF34C759)
                     delta < 0 -> Color(0xFFFF453A)
-                    else -> Color.White.copy(alpha = 0.6f)
+                    else -> Pal.fg.copy(alpha = 0.6f)
                 }
                 Text(
                     "${if (delta > 0) "+" else ""}$delta BPM (${if (pct > 0) "+" else ""}$pct %)",
@@ -356,8 +356,8 @@ fun MiniMetronome(vm: MetronomeViewModel, s: ExStats?, onEditFirst: () -> Unit, 
             val p = ((bpm - first).toFloat() / (target - first)).coerceIn(0f, 1f)
             LinearProgressIndicator(
                 progress = { p },
-                color = Orange,
-                trackColor = Color.White.copy(alpha = 0.12f),
+                color = Accent,
+                trackColor = Pal.fg.copy(alpha = 0.12f),
                 modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp))
             )
         }
@@ -367,8 +367,8 @@ fun MiniMetronome(vm: MetronomeViewModel, s: ExStats?, onEditFirst: () -> Unit, 
             Box(
                 Modifier.size(12.dp).clip(CircleShape)
                     .background(
-                        if (vm.flash) (if (vm.flashAccent) Orange else Color(0xFF34C759))
-                        else Color.White.copy(alpha = 0.1f)
+                        if (vm.flash) (if (vm.flashAccent) Accent else Color(0xFF34C759))
+                        else Pal.fg.copy(alpha = 0.1f)
                     )
             )
             Spacer(Modifier.weight(1f))
@@ -380,10 +380,10 @@ fun MiniMetronome(vm: MetronomeViewModel, s: ExStats?, onEditFirst: () -> Unit, 
             HoldBox({ vm.nudge(1) }, { vm.step5(1) }, Modifier.size(44.dp)) { Text("+", fontSize = 26.sp) }
             Spacer(Modifier.weight(1f))
             Box(
-                Modifier.size(44.dp).clip(CircleShape).background(Orange).clickable { vm.toggle() },
+                Modifier.size(44.dp).clip(CircleShape).background(Accent).clickable { vm.toggle() },
                 contentAlignment = Alignment.Center
             ) {
-                Text(if (vm.isPlaying) "■" else "▶", fontSize = 20.sp, color = Color.Black)
+                Text(if (vm.isPlaying) "■" else "▶", fontSize = 20.sp, color = Color.White)
             }
         }
     }
@@ -451,7 +451,7 @@ fun ViewerScreen(vm: MetronomeViewModel, ex: ExerciseViewModel) {
                         (if (cur.isPdf) (if (ex.viewerTitle != null) " · " else "") + "page ${pdfPage + 1}" else "")
                     if (sub.isNotEmpty()) {
                         Text(
-                            sub, fontSize = 12.sp, color = Color.White.copy(alpha = 0.6f),
+                            sub, fontSize = 12.sp, color = Pal.fg.copy(alpha = 0.6f),
                             maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
                     }
@@ -463,12 +463,12 @@ fun ViewerScreen(vm: MetronomeViewModel, ex: ExerciseViewModel) {
                     fontWeight = FontWeight.Bold, fontSize = 15.sp,
                     color = when {
                         ex.timerFinished -> Color(0xFFFF453A)
-                        ex.timerRunning -> Orange
-                        else -> Color.White
+                        ex.timerRunning -> Accent
+                        else -> Pal.fg
                     },
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color.White.copy(alpha = 0.1f))
+                        .background(Pal.fg.copy(alpha = 0.1f))
                         .clickable { if (ex.timerMin > 0) ex.timerToggle() else showTimer = true }
                         .padding(horizontal = 10.dp, vertical = 6.dp)
                 )
@@ -478,7 +478,7 @@ fun ViewerScreen(vm: MetronomeViewModel, ex: ExerciseViewModel) {
                 Text("✎", fontSize = 18.sp, modifier = Modifier.clickable { showTimer = true }.padding(6.dp))
                 if (items.size > 1) {
                     Text(
-                        "${page + 1} / ${items.size}", fontWeight = FontWeight.Bold, color = Orange,
+                        "${page + 1} / ${items.size}", fontWeight = FontWeight.Bold, color = Accent,
                         modifier = Modifier.padding(8.dp)
                     )
                 }
@@ -569,7 +569,7 @@ fun RoutineEditScreen(ex: ExerciseViewModel) {
             TimerPill(ex)
         }
         if (r.items.isEmpty()) {
-            Text("Cette routine est vide.", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
+            Text("Cette routine est vide.", color = Pal.fg.copy(alpha = 0.6f), fontSize = 14.sp)
         }
         val drag = rememberDragReorderState()
         val rowH = 68.dp
@@ -590,7 +590,7 @@ fun RoutineEditScreen(ex: ExerciseViewModel) {
                         .fillMaxWidth()
                         .height(rowH)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Color.White.copy(alpha = 0.06f))
+                        .background(Pal.fg.copy(alpha = 0.06f))
                         .padding(horizontal = 4.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -600,18 +600,18 @@ fun RoutineEditScreen(ex: ExerciseViewModel) {
                             .size(40.dp)
                             .reorderHandle(drag, k, rowPx, idx, r.items.lastIndex) { f, t -> ex.moveInRoutine(r.id, f, t - f) },
                         contentAlignment = Alignment.Center
-                    ) { Text("≡", fontSize = 26.sp, color = Color.White.copy(alpha = 0.7f)) }
-                    Text("${idx + 1}", Modifier.width(18.dp), color = Orange, fontWeight = FontWeight.Bold)
+                    ) { Text("≡", fontSize = 26.sp, color = Pal.fg.copy(alpha = 0.7f)) }
+                    Text("${idx + 1}", Modifier.width(18.dp), color = Accent, fontWeight = FontWeight.Bold)
                     if (e != null) Thumb(e, Modifier.size(width = 40.dp, height = 52.dp).clip(RoundedCornerShape(6.dp)))
                     else Box(Modifier.size(width = 40.dp, height = 52.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
                             e?.name ?: "Fichier introuvable", fontSize = 14.sp, maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            color = if (e == null) Color.White.copy(alpha = 0.4f) else Color.White
+                            color = if (e == null) Pal.fg.copy(alpha = 0.4f) else Pal.fg
                         )
                         val last = e?.let { ex.fileStats(it.uri)?.lastBpm }
-                        if (last != null) Text("Dernier : $last BPM", fontSize = 11.sp, color = Orange)
+                        if (last != null) Text("Dernier : $last BPM", fontSize = 11.sp, color = Accent)
                     }
                     Text("✕", fontSize = 18.sp, modifier = Modifier.clickable { ex.removeFromRoutine(r.id, idx) }.padding(8.dp))
                 }
@@ -630,7 +630,7 @@ fun RoutineEditScreen(ex: ExerciseViewModel) {
             text = { Text("Les fichiers d'exercices ne sont pas supprimés.") },
             confirmButton = {
                 TextButton(onClick = { showDelete = false; ex.deleteRoutine(r.id); ex.back() }) {
-                    Text("Supprimer", color = Orange)
+                    Text("Supprimer", color = Accent)
                 }
             },
             dismissButton = { TextButton(onClick = { showDelete = false }) { Text("Annuler") } }
@@ -668,7 +668,7 @@ fun RoutineEditScreen(ex: ExerciseViewModel) {
             },
             confirmButton = {
                 TextButton(onClick = { ex.addToRoutine(r.id, selected.toList()); showAdd = false }) {
-                    Text("Ajouter (${selected.size})", color = Orange)
+                    Text("Ajouter (${selected.size})", color = Accent)
                 }
             },
             dismissButton = { TextButton(onClick = { showAdd = false }) { Text("Annuler") } }

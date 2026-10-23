@@ -52,7 +52,7 @@ private fun MenuEntry(label: String, sub: String?, current: Boolean, onClick: ()
     DropdownMenuItem(
         text = {
             Column {
-                Text(label, color = if (current) Orange else Color.Unspecified, fontWeight = FontWeight.SemiBold)
+                Text(label, color = if (current) Accent else Color.Unspecified, fontWeight = FontWeight.SemiBold)
                 if (sub != null) Text(sub, fontSize = 12.sp, color = Color.Gray)
             }
         },
@@ -70,7 +70,7 @@ fun HeaderBar(ex: ExerciseViewModel, title: String) {
                 Modifier
                     .size(44.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(Color.White.copy(alpha = 0.12f))
+                    .background(Pal.fg.copy(alpha = 0.12f))
                     .clickable { open = true },
                 contentAlignment = Alignment.Center
             ) {
@@ -78,7 +78,7 @@ fun HeaderBar(ex: ExerciseViewModel, title: String) {
                     val sw = 2.5.dp.toPx()
                     for (i in 0..2) {
                         val y = size.height * (0.2f + 0.3f * i)
-                        drawLine(Color.White, Offset(0f, y), Offset(size.width, y), strokeWidth = sw, cap = StrokeCap.Round)
+                        drawLine(Pal.fg, Offset(0f, y), Offset(size.width, y), strokeWidth = sw, cap = StrokeCap.Round)
                     }
                 }
             }
@@ -96,7 +96,7 @@ fun HeaderBar(ex: ExerciseViewModel, title: String) {
         Spacer(Modifier.width(12.dp))
         Text(title, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.weight(1f))
-        Text("Auj. ${fmtDuration(ex.todayAppSec)}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
+        Text("Auj. ${fmtDuration(ex.todayAppSec)}", fontSize = 12.sp, color = Pal.fg.copy(alpha = 0.5f))
     }
 }
 
@@ -115,13 +115,13 @@ fun UsageScreen(ex: ExerciseViewModel) {
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
-                .background(Color.White.copy(alpha = 0.06f))
+                .background(Pal.fg.copy(alpha = 0.06f))
                 .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Tag("AUJOURD'HUI DANS L'APPLI")
-                Text(fmtDuration(ex.todayAppSec), fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Orange)
+                Text(fmtDuration(ex.todayAppSec), fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Accent)
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Tag("MÉTRONOME EN MARCHE")
@@ -131,7 +131,7 @@ fun UsageScreen(ex: ExerciseViewModel) {
 
         Text(
             "Le temps compte tant que l'application est à l'écran ou que le métronome joue.",
-            fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f)
+            fontSize = 12.sp, color = Pal.fg.copy(alpha = 0.5f)
         )
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize()) {
@@ -151,11 +151,11 @@ fun UsageScreen(ex: ExerciseViewModel) {
                             .fillMaxWidth((d.appSec.toFloat() / maxSec).coerceIn(0.02f, 1f))
                             .height(6.dp)
                             .clip(RoundedCornerShape(3.dp))
-                            .background(if (d.day == today) Orange else Color.White.copy(alpha = 0.35f))
+                            .background(if (d.day == today) Accent else Pal.fg.copy(alpha = 0.35f))
                     )
                     Text(
                         "Métronome en marche : ${fmtDuration(d.playSec)}",
-                        fontSize = 11.sp, color = Color.White.copy(alpha = 0.5f)
+                        fontSize = 11.sp, color = Pal.fg.copy(alpha = 0.5f)
                     )
                 }
             }

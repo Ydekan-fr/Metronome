@@ -210,7 +210,7 @@ fun SetlistsScreen(ex: ExerciseViewModel, sl: SetlistViewModel) {
         if (sl.setlists.isEmpty()) {
             Text(
                 "Aucune setlist. Créez-en une, puis ajoutez-y des presets (BPM, métrique, accents).",
-                color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp
+                color = Pal.fg.copy(alpha = 0.6f), fontSize = 14.sp
             )
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
@@ -219,7 +219,7 @@ fun SetlistsScreen(ex: ExerciseViewModel, sl: SetlistViewModel) {
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White.copy(alpha = 0.06f))
+                        .background(Pal.fg.copy(alpha = 0.06f))
                         .clickable { sl.open(s.id); ex.push(Screen.SETLIST_EDIT) }
                         .padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -227,7 +227,7 @@ fun SetlistsScreen(ex: ExerciseViewModel, sl: SetlistViewModel) {
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(s.name, fontWeight = FontWeight.Bold, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("${s.presets.size} preset(s)", fontSize = 12.sp, color = Color.White.copy(alpha = 0.6f))
+                        Text("${s.presets.size} preset(s)", fontSize = 12.sp, color = Pal.fg.copy(alpha = 0.6f))
                     }
                     Pill("● Live", on = true) {
                         sl.open(s.id)
@@ -301,8 +301,8 @@ fun SetlistEditScreen(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: Setlist
                         .fillMaxWidth()
                         .height(ROW_H)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White.copy(alpha = if (selected) 0.14f else 0.06f))
-                        .then(if (selected) Modifier.border(1.5.dp, Orange, RoundedCornerShape(12.dp)) else Modifier)
+                        .background(Pal.fg.copy(alpha = if (selected) 0.14f else 0.06f))
+                        .then(if (selected) Modifier.border(1.5.dp, Accent, RoundedCornerShape(12.dp)) else Modifier)
                         .clickable { sl.select(idx); applyPreset(vm, p) }
                         .padding(horizontal = 6.dp, vertical = 4.dp),
                     verticalArrangement = Arrangement.SpaceEvenly
@@ -314,7 +314,7 @@ fun SetlistEditScreen(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: Setlist
                                 .size(40.dp)
                                 .reorderHandle(drag, p.id, rowPx, idx, s.presets.lastIndex) { f, t -> sl.movePreset(f, t) },
                             contentAlignment = Alignment.Center
-                        ) { Text("≡", fontSize = 26.sp, color = Color.White.copy(alpha = 0.7f)) }
+                        ) { Text("≡", fontSize = 26.sp, color = Pal.fg.copy(alpha = 0.7f)) }
                         Text(
                             p.name, Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 16.sp,
                             maxLines = 1, overflow = TextOverflow.Ellipsis
@@ -328,10 +328,10 @@ fun SetlistEditScreen(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: Setlist
                         modifier = Modifier.padding(start = 40.dp)
                     ) {
                         Text(
-                            "${p.bpm} BPM", color = Orange, fontWeight = FontWeight.Bold,
+                            "${p.bpm} BPM", color = Accent, fontWeight = FontWeight.Bold,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(Color.White.copy(alpha = 0.1f))
+                                .background(Pal.fg.copy(alpha = 0.1f))
                                 .clickable { bpmId = p.id }
                                 .padding(horizontal = 10.dp, vertical = 6.dp)
                         )
@@ -340,14 +340,14 @@ fun SetlistEditScreen(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: Setlist
                                 p.sig.label + " ▾", fontWeight = FontWeight.Bold,
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(Color.White.copy(alpha = 0.1f))
+                                    .background(Pal.fg.copy(alpha = 0.1f))
                                     .clickable { sigMenuId = p.id }
                                     .padding(horizontal = 10.dp, vertical = 6.dp)
                             )
                             DropdownMenu(expanded = sigMenuId == p.id, onDismissRequest = { sigMenuId = null }) {
                                 TimeSig.ALL.forEach { t ->
                                     DropdownMenuItem(
-                                        text = { Text(t.label, color = if (t == p.sig) Orange else Color.Unspecified) },
+                                        text = { Text(t.label, color = if (t == p.sig) Accent else Color.Unspecified) },
                                         onClick = {
                                             sigMenuId = null
                                             val np = p.withSig(t)
@@ -360,7 +360,7 @@ fun SetlistEditScreen(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: Setlist
                         }
                         Spacer(Modifier.weight(1f))
                         Text(
-                            "⟳ Réglage actuel", fontSize = 12.sp, color = Color.White.copy(alpha = 0.8f),
+                            "⟳ Réglage actuel", fontSize = 12.sp, color = Pal.fg.copy(alpha = 0.8f),
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable { sl.editPreset(SPreset.from(p.name, vm.cfg).copy(id = p.id)) }
@@ -381,7 +381,7 @@ fun SetlistEditScreen(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: Setlist
                 Modifier
                     .weight(1f).height(56.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color.White.copy(alpha = 0.14f))
+                    .background(Pal.fg.copy(alpha = 0.14f))
                     .clickable {
                         val before = vm.cfg.bpm
                         vm.tap()
@@ -391,11 +391,11 @@ fun SetlistEditScreen(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: Setlist
                     },
                 contentAlignment = Alignment.Center
             ) { Text("TAP", fontWeight = FontWeight.Bold, fontSize = 18.sp) }
-            Text("${vm.cfg.bpm}", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Orange)
+            Text("${vm.cfg.bpm}", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Accent)
             Box(
-                Modifier.size(56.dp).clip(CircleShape).background(Orange).clickable { vm.toggle() },
+                Modifier.size(56.dp).clip(CircleShape).background(Accent).clickable { vm.toggle() },
                 contentAlignment = Alignment.Center
-            ) { Text(if (vm.isPlaying) "■" else "▶", fontSize = 24.sp, color = Color.Black) }
+            ) { Text(if (vm.isPlaying) "■" else "▶", fontSize = 24.sp, color = Color.White) }
         }
     }
 
@@ -409,7 +409,7 @@ fun SetlistEditScreen(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: Setlist
             title = { Text("Supprimer « ${s.name} » ?") },
             confirmButton = {
                 TextButton(onClick = { deleteSetlist = false; sl.delete(s.id); ex.back() }) {
-                    Text("Supprimer", color = Orange)
+                    Text("Supprimer", color = Accent)
                 }
             },
             dismissButton = { TextButton(onClick = { deleteSetlist = false }) { Text("Annuler") } }
@@ -447,7 +447,7 @@ fun SetlistLiveScreen(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: Setlist
     if (s == null || s.presets.isEmpty()) {
         Column(Modifier.fillMaxSize().padding(12.dp)) {
             Text("←", fontSize = 26.sp, modifier = Modifier.clickable { ex.back() }.padding(8.dp))
-            Text("Cette setlist est vide.", Modifier.padding(16.dp), color = Color.White.copy(alpha = 0.6f))
+            Text("Cette setlist est vide.", Modifier.padding(16.dp), color = Pal.fg.copy(alpha = 0.6f))
         }
         return
     }
@@ -480,10 +480,10 @@ fun SetlistLiveScreen(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: Setlist
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("←", fontSize = 26.sp, modifier = Modifier.clickable { ex.back() }.padding(8.dp))
             Text(
-                s.name, Modifier.weight(1f), fontSize = 13.sp, color = Color.White.copy(alpha = 0.6f),
+                s.name, Modifier.weight(1f), fontSize = 13.sp, color = Pal.fg.copy(alpha = 0.6f),
                 maxLines = 1, overflow = TextOverflow.Ellipsis
             )
-            Text("${idx + 1} / ${s.presets.size}", color = Orange, fontWeight = FontWeight.Bold)
+            Text("${idx + 1} / ${s.presets.size}", color = Accent, fontWeight = FontWeight.Bold)
         }
 
         Spacer(Modifier.height(8.dp))
@@ -493,7 +493,7 @@ fun SetlistLiveScreen(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: Setlist
         )
         Text(
             "${vm.cfg.bpm} BPM · ${cur.sig.label}", fontSize = 18.sp,
-            color = Color.White.copy(alpha = 0.7f)
+            color = Pal.fg.copy(alpha = 0.7f)
         )
 
         Spacer(Modifier.weight(1f))
@@ -502,31 +502,31 @@ fun SetlistLiveScreen(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: Setlist
             val canNext = idx < s.presets.lastIndex
             Box(
                 Modifier.size(64.dp).clip(CircleShape)
-                    .background(Color.White.copy(alpha = if (canPrev) 0.16f else 0.06f))
+                    .background(Pal.fg.copy(alpha = if (canPrev) 0.16f else 0.06f))
                     .clickable(enabled = canPrev) { sl.go(-1) },
                 contentAlignment = Alignment.Center
-            ) { Text("◀", fontSize = 24.sp, color = if (canPrev) Color.White else Color.White.copy(alpha = 0.3f)) }
+            ) { Text("◀", fontSize = 24.sp, color = if (canPrev) Pal.fg else Pal.fg.copy(alpha = 0.3f)) }
 
             Box(
                 Modifier
                     .size(200.dp)
                     .clip(CircleShape)
-                    .background(Orange)
+                    .background(Accent)
                     .border(
                         8.dp,
-                        if (vm.flash) (if (vm.flashAccent) Color.White else Color(0xFF34C759)) else Color.Transparent,
+                        if (vm.flash) (if (vm.flashAccent) Pal.fg else Color(0xFF34C759)) else Color.Transparent,
                         CircleShape
                     )
                     .clickable { vm.toggle() },
                 contentAlignment = Alignment.Center
-            ) { Text(if (vm.isPlaying) "■" else "▶", fontSize = 72.sp, color = Color.Black) }
+            ) { Text(if (vm.isPlaying) "■" else "▶", fontSize = 72.sp, color = Color.White) }
 
             Box(
                 Modifier.size(64.dp).clip(CircleShape)
-                    .background(Color.White.copy(alpha = if (canNext) 0.16f else 0.06f))
+                    .background(Pal.fg.copy(alpha = if (canNext) 0.16f else 0.06f))
                     .clickable(enabled = canNext) { sl.go(1) },
                 contentAlignment = Alignment.Center
-            ) { Text("▶", fontSize = 24.sp, color = if (canNext) Color.White else Color.White.copy(alpha = 0.3f)) }
+            ) { Text("▶", fontSize = 24.sp, color = if (canNext) Pal.fg else Pal.fg.copy(alpha = 0.3f)) }
         }
         Spacer(Modifier.weight(1f))
 
@@ -537,7 +537,7 @@ fun SetlistLiveScreen(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: Setlist
             Box(
                 Modifier
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color.White.copy(alpha = 0.14f))
+                    .background(Pal.fg.copy(alpha = 0.14f))
                     .clickable { vm.tap() }
                     .padding(horizontal = 18.dp, vertical = 10.dp)
             ) { Text("TAP", fontWeight = FontWeight.Bold) }
@@ -547,16 +547,16 @@ fun SetlistLiveScreen(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: Setlist
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(Color.White.copy(alpha = 0.06f))
+                .background(Pal.fg.copy(alpha = 0.06f))
                 .padding(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Tag("SUIVANT")
             if (next != null) {
                 Text(next.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${next.bpm} BPM · ${next.sig.label}", fontSize = 13.sp, color = Color.White.copy(alpha = 0.6f))
+                Text("${next.bpm} BPM · ${next.sig.label}", fontSize = 13.sp, color = Pal.fg.copy(alpha = 0.6f))
             } else {
-                Text("Fin de la setlist", fontSize = 16.sp, color = Color.White.copy(alpha = 0.6f))
+                Text("Fin de la setlist", fontSize = 16.sp, color = Pal.fg.copy(alpha = 0.6f))
             }
         }
     }

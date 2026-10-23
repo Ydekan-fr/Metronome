@@ -1,4 +1,4 @@
-# Ydeclik (Android)
+# Ydeklik (Android)
 
 Métronome Android (Kotlin / Jetpack Compose) avec exercices, routines et setlists.
 

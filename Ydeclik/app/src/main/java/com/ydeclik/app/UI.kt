@@ -51,18 +51,40 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-val Orange = Color(0xFFFF9500)
-val Bg = Color(0xFF171719)
+/** Rouge du logo Ydeklik. */
+val Accent = Color(0xFFEA3C3B)
+
+/** Gris du logo Ydeklik. */
+val BrandGrey = Color(0xFF58585A)
+
+/** Palette selon le mode clair / sombre (réglable dans les Réglages). */
+object Pal {
+    var dark by mutableStateOf(true)
+    val fg: Color get() = if (dark) Color.White else Color(0xFF1F2022)
+    val bg: Color get() = if (dark) Color(0xFF171719) else Color(0xFFF3F3F4)
+    val surface: Color get() = if (dark) Color(0xFF262628) else Color.White
+    val surface2: Color get() = if (dark) Color(0xFF1F1F22) else Color(0xFFE6E6E8)
+    val viewerBg: Color get() = if (dark) Color(0xFF0E0E10) else Color(0xFFDADADD)
+}
 
 @Composable
 fun YdeclikTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = darkColorScheme(
-            primary = Orange, onPrimary = Color.Black,
-            background = Bg, surface = Color(0xFF232326), onSurface = Color.White
-        ),
-        content = content
-    )
+    val scheme = if (Pal.dark) {
+        darkColorScheme(
+            primary = Accent, onPrimary = Color.White,
+            background = Pal.bg, onBackground = Pal.fg,
+            surface = Pal.surface, onSurface = Pal.fg,
+            surfaceVariant = Pal.surface2, onSurfaceVariant = Pal.fg
+        )
+    } else {
+        lightColorScheme(
+            primary = Accent, onPrimary = Color.White,
+            background = Pal.bg, onBackground = Pal.fg,
+            surface = Pal.surface, onSurface = Pal.fg,
+            surfaceVariant = Pal.surface2, onSurfaceVariant = Pal.fg
+        )
+    }
+    MaterialTheme(colorScheme = scheme, content = content)
 }
 
 // ------------------------------------------------------------------ éléments communs
@@ -72,17 +94,17 @@ fun Pill(text: String, on: Boolean = false, onClick: () -> Unit) {
     Box(
         Modifier
             .clip(RoundedCornerShape(50))
-            .background(if (on) Orange else Color.White.copy(alpha = 0.14f))
+            .background(if (on) Accent else Pal.fg.copy(alpha = 0.14f))
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp)
     ) {
-        Text(text, color = if (on) Color.Black else Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        Text(text, color = if (on) Color.White else Pal.fg, fontWeight = FontWeight.Bold, fontSize = 13.sp)
     }
 }
 
 @Composable
 fun Tag(text: String) {
-    Text(text, color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    Text(text, color = Pal.fg.copy(alpha = 0.6f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
 }
 
 /**
@@ -137,9 +159,9 @@ fun ScrubNumber(
                 onValueChange = { v -> field = v.copy(text = v.text.filter { it.isDigit() }) },
                 singleLine = true,
                 textStyle = TextStyle(
-                    color = Color.White, fontSize = fontSize, fontWeight = weight, textAlign = TextAlign.Center
+                    color = Pal.fg, fontSize = fontSize, fontWeight = weight, textAlign = TextAlign.Center
                 ),
-                cursorBrush = SolidColor(Orange),
+                cursorBrush = SolidColor(Accent),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { commit(); keyboard?.hide() }),
                 modifier = Modifier
@@ -156,7 +178,7 @@ fun ScrubNumber(
         } else {
             Text(
                 text = if (signed && value > 0) "+$value" else "$value",
-                color = Color.White, fontSize = fontSize, fontWeight = weight,
+                color = Pal.fg, fontSize = fontSize, fontWeight = weight,
                 modifier = Modifier
                     .pointerInput(Unit) { detectTapGestures(onTap = { begin() }) }
                     .pointerInput(Unit) {
@@ -241,13 +263,13 @@ fun MiniButton(symbol: String, on: Boolean, tint: Color, w: Dp, h: Dp, onClick: 
         Modifier
             .size(width = w, height = h)
             .clip(RoundedCornerShape(4.dp))
-            .background(if (on) tint else Color.White.copy(alpha = 0.08f))
+            .background(if (on) tint else Pal.fg.copy(alpha = 0.08f))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
             symbol, fontSize = (w.value * 0.55f).coerceIn(6f, 11f).sp, fontWeight = FontWeight.Bold,
-            color = if (on) Color.Black else Color.White.copy(alpha = 0.6f)
+            color = if (on) Color.White else Pal.fg.copy(alpha = 0.6f)
         )
     }
 }
@@ -258,7 +280,7 @@ fun MiniButton(symbol: String, on: Boolean, tint: Color, w: Dp, h: Dp, onClick: 
 fun TopBar(vm: MetronomeViewModel) {
     val cfg = vm.cfg
     val lightColor by animateColorAsState(
-        if (vm.flash) (if (vm.flashAccent) Orange else Color(0xFF34C759)) else Color.White.copy(alpha = 0.08f),
+        if (vm.flash) (if (vm.flashAccent) Accent else Color(0xFF34C759)) else Pal.fg.copy(alpha = 0.08f),
         label = "light"
     )
     var menu by remember { mutableStateOf(false) }
@@ -272,14 +294,14 @@ fun TopBar(vm: MetronomeViewModel) {
                     .size(26.dp)
                     .clip(CircleShape)
                     .background(lightColor)
-                    .border(1.dp, Color.White.copy(alpha = if (vm.lightEnabled) 0.3f else 0.1f), CircleShape)
+                    .border(1.dp, Pal.fg.copy(alpha = if (vm.lightEnabled) 0.3f else 0.1f), CircleShape)
                     .clickable { vm.toggleLight() }
             )
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Box {
                 Text(
-                    cfg.sig.label + " ▾", fontSize = 32.sp, fontWeight = FontWeight.SemiBold, color = Color.White,
+                    cfg.sig.label + " ▾", fontSize = 32.sp, fontWeight = FontWeight.SemiBold, color = Pal.fg,
                     modifier = Modifier.clickable { menu = true }
                 )
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -300,7 +322,7 @@ fun TopBar(vm: MetronomeViewModel) {
 fun TempoSection(vm: MetronomeViewModel) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         HoldBox({ vm.nudge(1) }, { vm.step5(1) }, Modifier.size(width = 140.dp, height = 48.dp)) {
-            Text("▲", fontSize = 26.sp, color = Color.White)
+            Text("▲", fontSize = 26.sp, color = Pal.fg)
         }
         ScrubNumber(
             value = vm.cfg.bpm, onChange = { vm.setBPM(it) }, range = 20..300,
@@ -308,9 +330,9 @@ fun TempoSection(vm: MetronomeViewModel) {
             trigger = vm.tempoEditTrigger, onEditing = { vm.typing = it }
         )
         HoldBox({ vm.nudge(-1) }, { vm.step5(-1) }, Modifier.size(width = 140.dp, height = 48.dp)) {
-            Text("▼", fontSize = 26.sp, color = Color.White)
+            Text("▼", fontSize = 26.sp, color = Pal.fg)
         }
-        Text("BPM · ${tempoName(vm.cfg.bpm)}", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
+        Text("BPM · ${tempoName(vm.cfg.bpm)}", color = Pal.fg.copy(alpha = 0.6f), fontSize = 14.sp)
     }
 }
 
@@ -333,7 +355,7 @@ fun BeatColumn(vm: MetronomeViewModel, b: Int, colW: Dp) {
         Modifier
             .width(colW)
             .clip(RoundedCornerShape(8.dp))
-            .background(Color.White.copy(alpha = if (current) 0.10f else 0.04f))
+            .background(Pal.fg.copy(alpha = if (current) 0.10f else 0.04f))
             .padding(pad),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -348,11 +370,11 @@ fun BeatColumn(vm: MetronomeViewModel, b: Int, colW: Dp) {
                     onLongClick = { vm.toggleNote(b, 0, NoteState.ACCENT) }
                 )
         ) {
-            NoteIcon(subs, if (current) Orange else Color.White.copy(alpha = 0.92f), Modifier.fillMaxSize())
+            NoteIcon(subs, if (current) Accent else Pal.fg.copy(alpha = 0.92f), Modifier.fillMaxSize())
             if (subs == 3) {
                 Text(
                     "3", fontSize = small, fontWeight = FontWeight.Bold,
-                    color = if (current) Orange else Color.White,
+                    color = if (current) Accent else Pal.fg,
                     modifier = Modifier.align(Alignment.TopCenter)
                 )
             }
@@ -364,10 +386,10 @@ fun BeatColumn(vm: MetronomeViewModel, b: Int, colW: Dp) {
                 Column(
                     Modifier
                         .clip(RoundedCornerShape(4.dp))
-                        .background(if (live) Orange.copy(alpha = 0.25f) else Color.Transparent),
+                        .background(if (live) Accent.copy(alpha = 0.25f) else Color.Transparent),
                     verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    MiniButton(">", st == NoteState.ACCENT, Orange, btnW, btnH) {
+                    MiniButton(">", st == NoteState.ACCENT, Accent, btnW, btnH) {
                         vm.toggleNote(b, k, NoteState.ACCENT)
                     }
                     MiniButton("‖", st == NoteState.REST, Color.Gray, btnW, btnH) {
@@ -379,7 +401,7 @@ fun BeatColumn(vm: MetronomeViewModel, b: Int, colW: Dp) {
         Text(
             "${b + 1}", fontSize = small,
             fontWeight = if (isStart) FontWeight.Bold else FontWeight.Normal,
-            color = if (isStart) Orange else Color.White.copy(alpha = 0.5f)
+            color = if (isStart) Accent else Pal.fg.copy(alpha = 0.5f)
         )
     }
 }
@@ -457,22 +479,22 @@ fun PresetsRow(vm: MetronomeViewModel) {
                     Modifier
                         .size(width = 32.dp, height = 38.dp)
                         .clip(RoundedCornerShape(7.dp))
-                        .background(Color.White.copy(alpha = if (filled) 0.18f else 0.06f))
+                        .background(Pal.fg.copy(alpha = if (filled) 0.18f else 0.06f))
                         .border(
                             1.5.dp,
-                            if (vm.currentSlot == i) Orange else Color.Transparent,
+                            if (vm.currentSlot == i) Accent else Color.Transparent,
                             RoundedCornerShape(7.dp)
                         )
                         .combinedClickable(onClick = { vm.loadPreset(i) }, onLongClick = { vm.savePreset(i) }),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("${i + 1}", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text("${i + 1}", color = Pal.fg, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 }
             }
         }
         Text(
             "Toucher : charger · Appui long : enregistrer",
-            color = Color.White.copy(alpha = 0.45f), fontSize = 11.sp
+            color = Pal.fg.copy(alpha = 0.45f), fontSize = 11.sp
         )
     }
 }
@@ -485,11 +507,11 @@ fun Transport(vm: MetronomeViewModel) {
             Modifier
                 .size(72.dp)
                 .clip(CircleShape)
-                .background(Orange)
+                .background(Accent)
                 .clickable { vm.toggle() },
             contentAlignment = Alignment.Center
         ) {
-            Text(if (vm.isPlaying) "■" else "▶", fontSize = 30.sp, color = Color.Black)
+            Text(if (vm.isPlaying) "■" else "▶", fontSize = 30.sp, color = Color.White)
         }
         Spacer(Modifier.weight(1f))
     }
@@ -503,7 +525,7 @@ fun <T> PickerRow(label: String, current: String, options: List<Pair<String, T>>
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.width(90.dp), fontSize = 14.sp)
         Box {
-            TextButton(onClick = { open = true }) { Text("$current ▾", color = Orange) }
+            TextButton(onClick = { open = true }) { Text("$current ▾", color = Accent) }
             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                 options.forEach { (name, value) ->
                     DropdownMenuItem(text = { Text(name) }, onClick = { onPick(value); open = false })
@@ -524,6 +546,32 @@ fun SettingsDialog(vm: MetronomeViewModel, ex: ExerciseViewModel, onClose: () ->
             android.media.RingtoneManager.getRingtone(ctx, u).getTitle(ctx)
         }.getOrDefault("Par défaut")
     }
+    // Sauvegarde / restauration
+    var backupMsg by remember { mutableStateOf<String?>(null) }
+    var pendingRestore by remember { mutableStateOf<String?>(null) }
+    val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            backupMsg = runCatching {
+                ctx.contentResolver.openOutputStream(uri)?.use {
+                    it.write(Backup.export(ctx, ex.fileNameMap()).toByteArray(Charsets.UTF_8))
+                }
+                "Sauvegarde enregistrée."
+            }.getOrDefault("Échec de l'enregistrement de la sauvegarde.")
+        }
+    }
+    val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val text = runCatching {
+                ctx.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+            }.getOrNull()
+            if (text != null && Backup.isValid(text)) pendingRestore = text
+            else backupMsg = "Ce fichier n'est pas une sauvegarde Ydeklik."
+        }
+    }
     val ringtonePicker = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
     ) { res ->
@@ -534,10 +582,15 @@ fun SettingsDialog(vm: MetronomeViewModel, ex: ExerciseViewModel, onClose: () ->
     }
     AlertDialog(
         onDismissRequest = onClose,
-        confirmButton = { TextButton(onClick = onClose) { Text("Fermer", color = Orange) } },
+        confirmButton = { TextButton(onClick = onClose) { Text("Fermer", color = Accent) } },
         title = { Text("Réglages") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Apparence", Modifier.weight(1f), fontSize = 14.sp)
+                    Pill("Sombre", on = Pal.dark) { ex.updateDark(true) }
+                    Pill("Clair", on = !Pal.dark) { ex.updateDark(false) }
+                }
                 PickerRow(
                     "Son", vm.sound.label,
                     SoundKind.values().map { it.label to it }
@@ -565,11 +618,11 @@ fun SettingsDialog(vm: MetronomeViewModel, ex: ExerciseViewModel, onClose: () ->
                             )
                         }
                         ringtonePicker.launch(i)
-                    }) { Text("$alarmTitle ▾", color = Orange, maxLines = 1) }
+                    }) { Text("$alarmTitle ▾", color = Accent, maxLines = 1) }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Tester la sonnerie", Modifier.weight(1f), fontSize = 14.sp)
-                    TextButton(onClick = { alertTimeUp(ctx, ex.alarmUri) }) { Text("▶ Écouter", color = Orange) }
+                    TextButton(onClick = { alertTimeUp(ctx, ex.alarmUri) }) { Text("▶ Écouter", color = Accent) }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Lumière du clic", Modifier.weight(1f), fontSize = 14.sp)
@@ -577,10 +630,42 @@ fun SettingsDialog(vm: MetronomeViewModel, ex: ExerciseViewModel, onClose: () ->
                 }
                 Text(
                     "Le volume se règle avec les touches de volume du téléphone.",
-                    fontSize = 12.sp, color = Color.White.copy(alpha = 0.6f)
+                    fontSize = 12.sp, color = Pal.fg.copy(alpha = 0.6f)
                 )
-                Text("Version du 19/10 – 23h (minuteur + sonnerie)", fontSize = 10.sp, color = Color.White.copy(alpha = 0.35f))
+                Text("Sauvegarde (statistiques, progression, routines, setlists, fichiers)", fontSize = 13.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Pill("Exporter") {
+                        val d = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())
+                        exportLauncher.launch("ydeclik-sauvegarde-$d.json")
+                    }
+                    Pill("Importer") { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }
+                }
+                backupMsg?.let { Text(it, fontSize = 12.sp, color = Accent) }
+                Text("Version du 23/10 (Ydeklik, thème clair/sombre)", fontSize = 10.sp, color = Pal.fg.copy(alpha = 0.35f))
             }
         }
     )
+    pendingRestore?.let { json ->
+        AlertDialog(
+            onDismissRequest = { pendingRestore = null },
+            title = { Text("Restaurer cette sauvegarde ?") },
+            text = {
+                Text(
+                    "Les données actuelles seront remplacées. L'application se fermera ensuite : rouvrez-la. " +
+                        "Si les fichiers ne s'ouvrent plus (autre téléphone), utilisez « Relier » dans l'onglet Exercices."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (Backup.restore(ctx, json)) {
+                        android.os.Process.killProcess(android.os.Process.myPid())
+                    } else {
+                        backupMsg = "Échec de la restauration."
+                        pendingRestore = null
+                    }
+                }) { Text("Restaurer", color = Accent) }
+            },
+            dismissButton = { TextButton(onClick = { pendingRestore = null }) { Text("Annuler") } }
+        )
+    }
 }

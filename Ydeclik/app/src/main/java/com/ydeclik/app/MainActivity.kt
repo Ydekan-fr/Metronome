@@ -86,7 +86,7 @@ class PlaybackService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
-            NotificationChannel("ydeclik", "Ydeclik", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel("ydeclik", "Ydeklik", NotificationManager.IMPORTANCE_LOW)
         )
         val open = PendingIntent.getActivity(
             this, 0,
@@ -94,7 +94,7 @@ class PlaybackService : Service() {
             PendingIntent.FLAG_IMMUTABLE
         )
         val n = Notification.Builder(this, "ydeclik")
-            .setContentTitle("Ydeclik")
+            .setContentTitle("Ydeklik")
             .setContentText("Métronome en cours")
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(open)

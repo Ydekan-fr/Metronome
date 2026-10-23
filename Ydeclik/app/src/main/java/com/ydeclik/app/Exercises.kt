@@ -212,6 +212,7 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
             }
             autoApplyBpm = prefs.getBoolean("autoApply", true)
             timerMin = prefs.getInt("timerMin", 0)
+            Pal.dark = prefs.getBoolean("dark", true)
             timerRemaining = timerMin * 60
             alarmUri = prefs.getString("alarmUri", null)
             folderUri = prefs.getString("folderUri", null)
@@ -220,6 +221,7 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
         }
         refreshAlbumItems()
         refreshFolder()
+        checkMissing()
         loadUsage()
         startUsageLoop()
     }
@@ -296,6 +298,12 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
     fun updateSort(m: SortMode) {
         sortMode = m
         prefs.edit().putString("sort", m.name).apply()
+    }
+
+    /** Mode sombre (vrai) ou clair (faux). */
+    fun updateDark(v: Boolean) {
+        Pal.dark = v
+        prefs.edit().putBoolean("dark", v).apply()
     }
 
     fun updateTimer(min: Int) {
@@ -411,43 +419,145 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     /** Relit le dossier : appelé au démarrage, au retour dans l'appli et par le bouton d'actualisation. */
-    fun refreshFolder() {
-        val tree = folderUri?.let { Uri.parse(it) } ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            val out = ArrayList<Exercise>()
-            fun scan(docId: String, depth: Int) {
-                val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId)
-                runCatching {
-                    cr.query(
-                        children,
-                        arrayOf(
-                            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                            DocumentsContract.Document.COLUMN_MIME_TYPE
-                        ), null, null, null
-                    )?.use { c ->
-                        while (c.moveToNext()) {
-                            val id = c.getString(0)
-                            val name = c.getString(1) ?: continue
-                            val mime = c.getString(2) ?: ""
-                            if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                                if (depth < 3) scan(id, depth + 1)
-                            } else {
-                                val pdf = mime == "application/pdf" || name.endsWith(".pdf", true)
-                                val img = mime == "image/jpeg" || mime == "image/png" ||
-                                    name.endsWith(".jpg", true) || name.endsWith(".jpeg", true) || name.endsWith(".png", true)
-                                if (pdf || img) {
-                                    out.add(Exercise(DocumentsContract.buildDocumentUriUsingTree(tree, id).toString(), name, pdf))
-                                }
+    /** Parcourt un dossier (3 niveaux) et renvoie les PDF / JPG / PNG trouvés. Appel bloquant. */
+    private fun scanTree(tree: Uri): List<Exercise> {
+        val out = ArrayList<Exercise>()
+        fun scan(docId: String, depth: Int) {
+            val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId)
+            runCatching {
+                cr.query(
+                    children,
+                    arrayOf(
+                        DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                        DocumentsContract.Document.COLUMN_MIME_TYPE
+                    ), null, null, null
+                )?.use { c ->
+                    while (c.moveToNext()) {
+                        val id = c.getString(0)
+                        val name = c.getString(1) ?: continue
+                        val mime = c.getString(2) ?: ""
+                        if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                            if (depth < 3) scan(id, depth + 1)
+                        } else {
+                            val pdf = mime == "application/pdf" || name.endsWith(".pdf", true)
+                            val img = mime == "image/jpeg" || mime == "image/png" ||
+                                name.endsWith(".jpg", true) || name.endsWith(".jpeg", true) || name.endsWith(".png", true)
+                            if (pdf || img) {
+                                out.add(Exercise(DocumentsContract.buildDocumentUriUsingTree(tree, id).toString(), name, pdf))
                             }
                         }
                     }
                 }
             }
-            runCatching { scan(DocumentsContract.getTreeDocumentId(tree), 0) }
+        }
+        runCatching { scan(DocumentsContract.getTreeDocumentId(tree), 0) }
+        return out
+    }
+
+    fun refreshFolder() {
+        val tree = folderUri?.let { Uri.parse(it) } ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val out = scanTree(tree)
             withContext(Dispatchers.Main) { folderItems = out.sortedBy { it.name.lowercase() } }
         }
     }
+
+    // ------------------------------------------------------------ sauvegarde : fichiers introuvables et reliage
+
+    /** Nombre de fichiers (importés ou utilisés dans une routine) qui ne peuvent plus être ouverts. */
+    var missingCount by mutableIntStateOf(0); private set
+
+    /** Message de résultat du dernier reliage. */
+    var relinkMessage by mutableStateOf<String?>(null)
+
+    private fun isReadable(uri: String): Boolean =
+        runCatching { cr.openFileDescriptor(Uri.parse(uri), "r")?.use { true } ?: false }.getOrDefault(false)
+
+    private fun baseUri(key: String): String = key.replace(Regex("#p\\d+$"), "")
+
+    private fun oldNames(): Map<String, String> = runCatching {
+        val o = JSONObject(prefs.getString("oldNames", "{}") ?: "{}")
+        o.keys().asSequence().associateWith { o.getString(it) }
+    }.getOrDefault(emptyMap())
+
+    /** uri -> nom, écrit dans la sauvegarde. */
+    fun fileNameMap(): Map<String, String> {
+        val m = HashMap<String, String>(oldNames())
+        library.forEach { m[it.uri] = it.name }
+        return m
+    }
+
+    fun checkMissing() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val uris = (imported.map { it.uri } + routines.flatMap { r -> r.items.map { it.uri } }).toSet()
+            val n = uris.count { !isReadable(it) }
+            withContext(Dispatchers.Main) { missingCount = n }
+        }
+    }
+
+    /** Relie les fichiers introuvables à des fichiers de même nom parmi [extra] et la bibliothèque actuelle. */
+    private fun relink(extra: List<Exercise>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val cands = (extra + library).groupBy { it.name.lowercase() }
+            val names = HashMap<String, String>(oldNames())
+            imported.forEach { names[it.uri] = it.name }
+            val olds = HashSet<String>()
+            olds += imported.map { it.uri }
+            olds += stats.keys.map { baseUri(it) }
+            olds += meta.keys
+            routines.forEach { r -> olds += r.items.map { it.uri } }
+            val map = HashMap<String, String>()
+            for (old in olds) {
+                val name = names[old]?.lowercase() ?: continue
+                if (isReadable(old)) continue
+                val target = cands[name]?.firstOrNull { it.uri != old && isReadable(it.uri) } ?: continue
+                map[old] = target.uri
+            }
+            withContext(Dispatchers.Main) {
+                applyRemap(map)
+                relinkMessage = if (map.isEmpty()) "Aucun fichier correspondant n'a été trouvé."
+                else "${map.size} fichier(s) relié(s)."
+                checkMissing()
+            }
+        }
+    }
+
+    private fun applyRemap(map: Map<String, String>) {
+        if (map.isEmpty()) return
+        fun re(u: String) = map[u] ?: u
+        imported = imported.map { if (map.containsKey(it.uri)) it.copy(uri = map.getValue(it.uri)) else it }.distinctBy { it.uri }
+        stats = stats.entries.associate { (k, v) ->
+            val b = baseUri(k)
+            (map[b]?.let { n -> n + k.substring(b.length) } ?: k) to v
+        }
+        meta = meta.entries.associate { (k, v) -> re(k) to v }
+        routines = routines.map { r -> r.copy(items = r.items.map { it.copy(uri = re(it.uri)) }) }
+        saveImported(); saveStats(); saveMeta(); saveRoutines()
+    }
+
+    fun relinkFromTree(tree: Uri) {
+        runCatching { cr.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        viewModelScope.launch(Dispatchers.IO) {
+            val found = scanTree(tree)
+            withContext(Dispatchers.Main) { relink(found) }
+        }
+    }
+
+    fun relinkFromDocs(uris: List<Uri>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val found = uris.map { u ->
+                runCatching { cr.takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                val name = displayName(u)
+                val mime = cr.getType(u) ?: ""
+                Exercise(u.toString(), name, mime == "application/pdf" || name.endsWith(".pdf", true))
+            }
+            withContext(Dispatchers.Main) { relink(found) }
+        }
+    }
+
+    /** Relie avec ce qui est déjà dans la bibliothèque (dossier ou album choisi à nouveau). */
+    fun relinkFromLibrary() = relink(emptyList())
 
     fun refreshAlbumItems() {
         val a = album ?: return

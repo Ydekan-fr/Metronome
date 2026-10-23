@@ -34,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -60,6 +61,16 @@ import kotlinx.coroutines.withContext
 fun YdeclikApp(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: SetlistViewModel) {
     val view = LocalView.current
 
+    // Barres système assorties au mode clair / sombre.
+    LaunchedEffect(Pal.dark) {
+        val window = (view.context as? Activity)?.window ?: return@LaunchedEffect
+        window.statusBarColor = Pal.bg.toArgb()
+        window.navigationBarColor = Pal.bg.toArgb()
+        val c = WindowCompat.getInsetsController(window, view)
+        c.isAppearanceLightStatusBars = !Pal.dark
+        c.isAppearanceLightNavigationBars = !Pal.dark
+    }
+
     // Plein écran du fichier (double toucher) : on masque aussi les barres système.
     LaunchedEffect(ex.immersive) {
         val window = (view.context as? Activity)?.window ?: return@LaunchedEffect
@@ -80,7 +91,7 @@ fun YdeclikApp(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: SetlistViewMod
     BackHandler(enabled = ex.stack.size > 1) { ex.back() }
     BackHandler(enabled = ex.immersive) { ex.immersive = false }
 
-    Surface(color = Bg, modifier = Modifier.fillMaxSize()) {
+    Surface(color = Pal.bg, modifier = Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().safeDrawingPadding()) {
             when (ex.screen) {
                 Screen.METRONOME -> MetronomeScreen(vm, ex)
@@ -108,14 +119,14 @@ fun YdeclikApp(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: SetlistViewMod
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text("Touchez « Copier », puis envoyez ce texte pour que le problème soit corrigé.", fontSize = 13.sp)
                     Spacer(Modifier.height(8.dp))
-                    Text(trace.take(2500), fontSize = 9.sp, color = Color.White.copy(alpha = 0.7f))
+                    Text(trace.take(2500), fontSize = 9.sp, color = Pal.fg.copy(alpha = 0.7f))
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
                     clipboard.setText(androidx.compose.ui.text.AnnotatedString(trace.take(6000)))
                     close()
-                }) { Text("Copier", color = Orange) }
+                }) { Text("Copier", color = Accent) }
             },
             dismissButton = { TextButton(onClick = close) { Text("Fermer") } }
         )
@@ -150,7 +161,7 @@ fun Thumb(e: Exercise, modifier: Modifier) {
     val bmp by produceState<Bitmap?>(null, e.uri) {
         value = withContext(Dispatchers.IO) { Pics.thumb(cr, e) }
     }
-    Box(modifier.background(Color.White.copy(alpha = 0.08f)), contentAlignment = Alignment.Center) {
+    Box(modifier.background(Pal.fg.copy(alpha = 0.08f)), contentAlignment = Alignment.Center) {
         val b = bmp
         if (b != null) {
             Image(
@@ -158,7 +169,7 @@ fun Thumb(e: Exercise, modifier: Modifier) {
                 contentScale = ContentScale.Crop, alignment = Alignment.TopCenter
             )
         } else {
-            Text(if (e.isPdf) "PDF" else "…", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+            Text(if (e.isPdf) "PDF" else "…", color = Pal.fg.copy(alpha = 0.5f), fontSize = 12.sp)
         }
     }
 }
@@ -196,7 +207,7 @@ fun TextPrompt(
                 keyboard?.show()
             }
         },
-        confirmButton = { TextButton(onClick = { onDone(field.text) }) { Text("OK", color = Orange) } },
+        confirmButton = { TextButton(onClick = { onDone(field.text) }) { Text("OK", color = Accent) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
     )
 }
@@ -223,7 +234,7 @@ fun ExerciseCard(ex: ExerciseViewModel, e: Exercise, onClick: () -> Unit, onLong
     Column(
         Modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.06f))
+            .background(Pal.fg.copy(alpha = 0.06f))
             .combinedClickable(onClick = onClick, onLongClick = onLong)
             .padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -232,12 +243,12 @@ fun ExerciseCard(ex: ExerciseViewModel, e: Exercise, onClick: () -> Unit, onLong
         Text(e.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Text(
             "Ouvert : ${fmtDate(ex.lastOpened(e.uri))}",
-            fontSize = 11.sp, color = Color.White.copy(alpha = 0.6f)
+            fontSize = 11.sp, color = Pal.fg.copy(alpha = 0.6f)
         )
         Text(
             (if (e.isPdf && page > 0) "Page ${page + 1} · " else "") +
                 "Premier ${s?.firstBpm ?: "—"} · Dernier ${s?.lastBpm ?: "—"} BPM",
-            fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Orange
+            fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Accent
         )
     }
 }
@@ -259,6 +270,13 @@ fun ExercisesScreen(ex: ExerciseViewModel) {
         if (u != null) ex.chooseFolder(u)
     }
     var folderMenu by remember { mutableStateOf(false) }
+    var showRelink by remember { mutableStateOf(false) }
+    val relinkTree = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { u ->
+        if (u != null) ex.relinkFromTree(u)
+    }
+    val relinkDocs = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) ex.relinkFromDocs(uris)
+    }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 12.dp)) {
         HeaderBar(ex, "Exercices")
@@ -271,6 +289,16 @@ fun ExercisesScreen(ex: ExerciseViewModel) {
                 } else {
                     permLauncher.launch(mediaPermissions())
                 }
+            }
+        }
+        if (ex.missingCount > 0) {
+            Spacer(Modifier.height(6.dp))
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Accent.copy(alpha = 0.18f)).padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("⚠ ${ex.missingCount} fichier(s) introuvable(s)", Modifier.weight(1f), fontSize = 13.sp)
+                Pill("Relier", on = true) { showRelink = true }
             }
         }
         Spacer(Modifier.height(6.dp))
@@ -302,7 +330,7 @@ fun ExercisesScreen(ex: ExerciseViewModel) {
         if (lib.isEmpty()) {
             Text(
                 "Aucun exercice.\nTouchez « + Fichiers » pour ajouter des JPG, PNG ou PDF, ou choisissez un album photo.",
-                color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp,
+                color = Pal.fg.copy(alpha = 0.6f), fontSize = 14.sp,
                 modifier = Modifier.padding(top = 24.dp)
             )
         } else {
@@ -319,13 +347,43 @@ fun ExercisesScreen(ex: ExerciseViewModel) {
         }
     }
 
+    if (showRelink) {
+        AlertDialog(
+            onDismissRequest = { showRelink = false },
+            title = { Text("Relier les fichiers") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Indiquez où se trouvent maintenant vos fichiers : ils sont retrouvés d'après leur nom, " +
+                            "et statistiques, progression et routines sont conservées.",
+                        fontSize = 13.sp
+                    )
+                    Pill("Choisir un dossier") { showRelink = false; relinkTree.launch(null) }
+                    Pill("Choisir des fichiers") {
+                        showRelink = false
+                        relinkDocs.launch(arrayOf("image/jpeg", "image/png", "application/pdf"))
+                    }
+                    Pill("Utiliser le dossier / album déjà choisi") { showRelink = false; ex.relinkFromLibrary() }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showRelink = false }) { Text("Fermer") } }
+        )
+    }
+    ex.relinkMessage?.let { m ->
+        AlertDialog(
+            onDismissRequest = { ex.relinkMessage = null },
+            title = { Text("Relier les fichiers") },
+            text = { Text(m) },
+            confirmButton = { TextButton(onClick = { ex.relinkMessage = null }) { Text("OK", color = Accent) } }
+        )
+    }
     if (folderMenu) {
         AlertDialog(
             onDismissRequest = { folderMenu = false },
             title = { Text("Dossier surveillé") },
             text = { Text("${ex.folderName}\n${ex.folderItems.size} fichier(s) trouvé(s). Il est relu à chaque retour dans l'application.") },
             confirmButton = {
-                TextButton(onClick = { folderMenu = false; folderPicker.launch(null) }) { Text("Changer", color = Orange) }
+                TextButton(onClick = { folderMenu = false; folderPicker.launch(null) }) { Text("Changer", color = Accent) }
             },
             dismissButton = {
                 TextButton(onClick = { folderMenu = false; ex.chooseFolder(null) }) { Text("Retirer") }
@@ -340,7 +398,7 @@ fun ExercisesScreen(ex: ExerciseViewModel) {
             text = { Text("Ouvert : ${fmtDate(ex.lastOpened(e.uri))}") },
             confirmButton = {
                 TextButton(onClick = { ex.resetStats(e.uri); menuFor = null }) {
-                    Text("Réinitialiser les stats", color = Orange)
+                    Text("Réinitialiser les stats", color = Accent)
                 }
             },
             dismissButton = {
@@ -376,14 +434,14 @@ fun ExercisesScreen(ex: ExerciseViewModel) {
                         ) {
                             Text(
                                 a.name, Modifier.weight(1f), fontSize = 15.sp,
-                                color = if (ex.album?.id == a.id) Orange else Color.White
+                                color = if (ex.album?.id == a.id) Accent else Pal.fg
                             )
-                            Text("${a.count}", color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp)
+                            Text("${a.count}", color = Pal.fg.copy(alpha = 0.5f), fontSize = 13.sp)
                         }
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { showAlbums = false }) { Text("Fermer", color = Orange) } }
+            confirmButton = { TextButton(onClick = { showAlbums = false }) { Text("Fermer", color = Accent) } }
         )
     }
 }
@@ -403,7 +461,7 @@ fun RoutinesScreen(ex: ExerciseViewModel) {
             Text(
                 "Une routine est une playlist modifiable d'exercices : votre programme d'entraînement.\n" +
                     "Créez-en une, ajoutez des exercices, puis passez de l'un à l'autre en glissant.",
-                color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp
+                color = Pal.fg.copy(alpha = 0.6f), fontSize = 14.sp
             )
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
@@ -412,7 +470,7 @@ fun RoutinesScreen(ex: ExerciseViewModel) {
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White.copy(alpha = 0.06f))
+                        .background(Pal.fg.copy(alpha = 0.06f))
                         .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -425,7 +483,7 @@ fun RoutinesScreen(ex: ExerciseViewModel) {
                         val total = r.items.sumOf { it.minutes }
                         Text(
                             "${r.items.size} exercice(s)" + if (total > 0) " · $total min" else "",
-                            fontSize = 12.sp, color = Color.White.copy(alpha = 0.6f)
+                            fontSize = 12.sp, color = Pal.fg.copy(alpha = 0.6f)
                         )
                     }
                     Pill("Éditer") { ex.editRoutine(r.id) }
