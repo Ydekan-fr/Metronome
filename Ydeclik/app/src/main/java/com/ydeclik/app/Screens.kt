@@ -100,6 +100,8 @@ fun YdeclikApp(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: SetlistViewMod
                 Screen.ROUTINE_EDIT -> RoutineEditScreen(ex)
                 Screen.VIEWER -> ViewerScreen(vm, ex)
                 Screen.USAGE -> UsageScreen(ex)
+                Screen.PROGRAMS -> ProgramsScreen(ex)
+                Screen.PROGRAM_EDIT -> ProgramEditScreen(ex)
                 Screen.SETLISTS -> SetlistsScreen(ex, sl)
                 Screen.SETLIST_EDIT -> SetlistEditScreen(vm, ex, sl)
                 Screen.SETLIST_LIVE -> SetlistLiveScreen(vm, ex, sl)

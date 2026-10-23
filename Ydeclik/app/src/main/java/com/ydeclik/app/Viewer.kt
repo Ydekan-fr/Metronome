@@ -235,7 +235,8 @@ fun PdfViewer(
     startPage: Int,
     onPage: (Int) -> Unit,
     onDoubleTap: () -> Unit,
-    onZoomed: (Boolean) -> Unit
+    onZoomed: (Boolean) -> Unit,
+    fixedPage: Int = -1
 ) {
     val cr = LocalContext.current.contentResolver
     val docState = produceState<PdfDoc?>(null, uri) {
@@ -251,6 +252,11 @@ fun PdfViewer(
         Box(Modifier.fillMaxSize().background(Pal.viewerBg), contentAlignment = Alignment.Center) {
             Text("Chargement…", color = Pal.fg.copy(alpha = 0.5f))
         }
+    } else if (fixedPage >= 0) {
+        // Programme : une seule page imposée, sans défilement vertical.
+        val idx = fixedPage.coerceIn(0, (doc.pageCount - 1).coerceAtLeast(0))
+        LaunchedEffect(idx) { curOnPage(idx) }
+        PdfFitPage(doc, idx, onDoubleTap) { z -> curZoomed(z) }
     } else {
         val pager = rememberPagerState(initialPage = startPage.coerceIn(0, (doc.pageCount - 1).coerceAtLeast(0))) {
             doc.pageCount
@@ -409,7 +415,8 @@ fun ViewerScreen(vm: MetronomeViewModel, ex: ExerciseViewModel) {
     val page = pager.settledPage
     val cur = items.getOrElse(page) { items.first() }
     // Pour un PDF, chaque page a ses propres BPM (clé « fichier#pN »).
-    val pdfPage = if (cur.isPdf) (pdfPages[page] ?: ex.metaPage(cur.uri)) else 0
+    val fixedPage = ex.viewerPages.getOrNull(page) ?: -1
+    val pdfPage = if (cur.isPdf) (if (fixedPage >= 0) fixedPage else (pdfPages[page] ?: ex.metaPage(cur.uri))) else 0
     val key = statKey(cur.uri, pdfPage)
     val stats = ex.stats[key]
 
@@ -431,7 +438,7 @@ fun ViewerScreen(vm: MetronomeViewModel, ex: ExerciseViewModel) {
     }
     // Mémorise la page de PDF ouverte en dernier (référence de l'écran d'accueil).
     LaunchedEffect(page, pdfPage) {
-        if (cur.isPdf) ex.setLastPage(cur.uri, pdfPage)
+        if (cur.isPdf && fixedPage < 0) ex.setLastPage(cur.uri, pdfPage)
     }
     val immersive = ex.immersive
 
@@ -499,7 +506,8 @@ fun ViewerScreen(vm: MetronomeViewModel, ex: ExerciseViewModel) {
                     startPage = pdfPages[p] ?: ex.metaPage(e.uri),
                     onPage = { i -> if (p == pager.currentPage) pdfPages[p] = i },
                     onDoubleTap = toggleFull,
-                    onZoomed = { z -> if (p == pager.currentPage) zoomed = z }
+                    onZoomed = { z -> if (p == pager.currentPage) zoomed = z },
+                    fixedPage = ex.viewerPages.getOrNull(p) ?: -1
                 )
             } else {
                 ImageViewer(e.uri, toggleFull) { z -> if (p == pager.currentPage) zoomed = z }

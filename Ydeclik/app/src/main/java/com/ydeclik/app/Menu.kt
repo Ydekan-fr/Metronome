@@ -86,6 +86,7 @@ fun HeaderBar(ex: ExerciseViewModel, title: String) {
                 MenuEntry("Métronome", null, ex.screen == Screen.METRONOME) { open = false; ex.tab(Screen.METRONOME) }
                 MenuEntry("Exercices", null, ex.screen == Screen.EXERCISES) { open = false; ex.tab(Screen.EXERCISES) }
                 MenuEntry("Routines", null, ex.screen == Screen.ROUTINES) { open = false; ex.tab(Screen.ROUTINES) }
+                MenuEntry("Programmes", null, ex.screen == Screen.PROGRAMS) { open = false; ex.tab(Screen.PROGRAMS) }
                 MenuEntry("Setlists", null, ex.screen == Screen.SETLISTS) { open = false; ex.tab(Screen.SETLISTS) }
                 MenuEntry("Réglages", null, false) { open = false; ex.settingsOpen = true }
                 MenuEntry("Utilisation", "Aujourd'hui : ${fmtDuration(ex.todayAppSec)}", ex.screen == Screen.USAGE) {

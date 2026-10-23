@@ -651,7 +651,7 @@ fun SettingsDialog(vm: MetronomeViewModel, ex: ExerciseViewModel, onClose: () ->
                 }
                 backupMsg?.let { Text(it, fontSize = 12.sp, color = Accent) }
                 Text(
-                    "Volume : touches du téléphone. Version V15 (Ydeklik)",
+                    "Volume : touches du téléphone. Version V16 (Ydeklik)",
                     fontSize = 10.sp, color = Pal.fg.copy(alpha = 0.4f), modifier = Modifier.padding(top = 6.dp)
                 )
             }

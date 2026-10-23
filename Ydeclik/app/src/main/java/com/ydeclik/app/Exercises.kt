@@ -50,6 +50,28 @@ data class Routine(
     val autoAdvance: Boolean = false
 )
 
+/** Ligne d'un programme : un fichier (avec pages facultatives, ex. « 3-5 » ou « 1,4,7 ») ou une routine. */
+data class ProgramLine(val kind: String, val ref: String, val pages: String = "") {
+    val isRoutine: Boolean get() = kind == "routine"
+}
+
+data class Program(val id: String, val name: String, val lines: List<ProgramLine>)
+
+/** « 3-5 », « 1,4,7 » ou « 2 » (pages numérotées à partir de 1) -> indices de pages à partir de 0. */
+fun parsePages(spec: String): List<Int> {
+    val out = ArrayList<Int>()
+    spec.split(',', ';', ' ').map { it.trim() }.filter { it.isNotEmpty() }.forEach { t ->
+        if (t.contains('-')) {
+            val a = t.substringBefore('-').trim().toIntOrNull()
+            val b = t.substringAfter('-').trim().toIntOrNull()
+            if (a != null && b != null && a >= 1 && b >= a) for (p in a..minOf(b, a + 500)) out.add(p - 1)
+        } else {
+            t.toIntOrNull()?.takeIf { it >= 1 }?.let { out.add(it - 1) }
+        }
+    }
+    return out
+}
+
 data class Album(val id: Long, val name: String, val count: Int)
 
 data class DayUsage(val day: String, val appSec: Long, val playSec: Long)
@@ -57,7 +79,7 @@ data class DayUsage(val day: String, val appSec: Long, val playSec: Long)
 enum class SortMode { NAME, RECENT }
 
 enum class Screen {
-    METRONOME, EXERCISES, ROUTINES, ROUTINE_EDIT, VIEWER, USAGE, SETLISTS, SETLIST_EDIT, SETLIST_LIVE
+    METRONOME, EXERCISES, ROUTINES, ROUTINE_EDIT, VIEWER, USAGE, SETLISTS, SETLIST_EDIT, SETLIST_LIVE, PROGRAMS, PROGRAM_EDIT
 }
 
 /** Clé des statistiques : le fichier (page 1 ou image) ou « fichier#pN » pour les pages suivantes d'un PDF. */
@@ -106,6 +128,10 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
     var stats by mutableStateOf(emptyMap<String, ExStats>()); private set
     var meta by mutableStateOf(emptyMap<String, FileMeta>()); private set
     var routines by mutableStateOf(emptyList<Routine>()); private set
+    var programs by mutableStateOf(emptyList<Program>()); private set
+    var editingProgramId by mutableStateOf<String?>(null); private set
+    /** Page de PDF imposée pour chaque diapo du lecteur (-1 = libre). Vide hors programme. */
+    var viewerPages by mutableStateOf(emptyList<Int>()); private set
     var autoApplyBpm by mutableStateOf(true); private set
     var sortMode by mutableStateOf(SortMode.NAME); private set
 
@@ -206,6 +232,20 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
             }
         }
         runCatching {
+            prefs.getString("programs", null)?.let { s ->
+                val a = JSONArray(s)
+                programs = List(a.length()) { i ->
+                    val o = a.getJSONObject(i)
+                    val arr = o.getJSONArray("lines")
+                    val lines = List(arr.length()) { j ->
+                        val v = arr.getJSONObject(j)
+                        ProgramLine(v.getString("kind"), v.getString("ref"), v.optString("pages", ""))
+                    }
+                    Program(o.getString("id"), o.getString("name"), lines)
+                }
+            }
+        }
+        runCatching {
             // Les identifiants d'album (BUCKET_ID) peuvent être négatifs : on teste la présence de la clé.
             if (prefs.contains("albumId")) {
                 album = Album(prefs.getLong("albumId", 0L), prefs.getString("albumName", "") ?: "", 0)
@@ -263,6 +303,16 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
             a.put(JSONObject().put("id", r.id).put("name", r.name).put("items", items).put("auto", r.autoAdvance))
         }
         prefs.edit().putString("routines", a.toString()).apply()
+    }
+
+    private fun savePrograms() {
+        val a = JSONArray()
+        programs.forEach { p ->
+            val lines = JSONArray()
+            p.lines.forEach { l -> lines.put(JSONObject().put("kind", l.kind).put("ref", l.ref).put("pages", l.pages)) }
+            a.put(JSONObject().put("id", p.id).put("name", p.name).put("lines", lines))
+        }
+        prefs.edit().putString("programs", a.toString()).apply()
     }
 
     // ------------------------------------------------------------ bibliothèque
@@ -531,7 +581,8 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun checkMissing() {
         viewModelScope.launch(Dispatchers.IO) {
-            val uris = (imported.map { it.uri } + routines.flatMap { r -> r.items.map { it.uri } }).toSet()
+            val uris = (imported.map { it.uri } + routines.flatMap { r -> r.items.map { it.uri } } +
+                programs.flatMap { p -> p.lines.filter { !it.isRoutine }.map { it.ref } }).toSet()
             val n = uris.count { !isReadable(it) }
             withContext(Dispatchers.Main) { missingCount = n }
         }
@@ -548,6 +599,7 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
             olds += stats.keys.map { baseUri(it) }
             olds += meta.keys
             routines.forEach { r -> olds += r.items.map { it.uri } }
+            programs.forEach { p -> olds += p.lines.filter { !it.isRoutine }.map { it.ref } }
             val map = HashMap<String, String>()
             for (old in olds) {
                 val name = names[old]?.lowercase() ?: continue
@@ -574,7 +626,10 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
         }
         meta = meta.entries.associate { (k, v) -> re(k) to v }
         routines = routines.map { r -> r.copy(items = r.items.map { it.copy(uri = re(it.uri)) }) }
-        saveImported(); saveStats(); saveMeta(); saveRoutines()
+        programs = programs.map { p ->
+            p.copy(lines = p.lines.map { if (it.isRoutine) it else it.copy(ref = re(it.ref)) })
+        }
+        saveImported(); saveStats(); saveMeta(); saveRoutines(); savePrograms()
     }
 
     fun relinkFromTree(tree: Uri) {
@@ -707,6 +762,80 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun updateAutoAdvance(id: String, v: Boolean) = updateRoutine(id) { it.copy(autoAdvance = v) }
 
+    // ------------------------------------------------------------ programmes
+
+    private fun updateProgram(id: String, f: (Program) -> Program) {
+        programs = programs.map { if (it.id == id) f(it) else it }
+        savePrograms()
+    }
+
+    fun newProgram(name: String): String {
+        val p = Program(UUID.randomUUID().toString(), name.ifBlank { "Programme ${programs.size + 1}" }, emptyList())
+        programs = programs + p
+        savePrograms()
+        return p.id
+    }
+
+    fun renameProgram(id: String, name: String) {
+        if (name.isNotBlank()) updateProgram(id) { it.copy(name = name.trim()) }
+    }
+
+    fun deleteProgram(id: String) {
+        programs = programs.filter { it.id != id }
+        savePrograms()
+    }
+
+    fun addProgramFiles(id: String, uris: List<String>) =
+        updateProgram(id) { it.copy(lines = it.lines + uris.map { u -> ProgramLine("file", u) }) }
+
+    fun addProgramRoutine(id: String, routineId: String) =
+        updateProgram(id) { it.copy(lines = it.lines + ProgramLine("routine", routineId)) }
+
+    fun removeProgramLine(id: String, index: Int) = updateProgram(id) {
+        it.copy(lines = it.lines.toMutableList().also { l -> if (index in l.indices) l.removeAt(index) })
+    }
+
+    fun moveInProgram(id: String, index: Int, delta: Int) = updateProgram(id) { p ->
+        val to = index + delta
+        if (index !in p.lines.indices || to !in p.lines.indices) p
+        else p.copy(lines = p.lines.toMutableList().also { l -> l.add(to, l.removeAt(index)) })
+    }
+
+    fun setProgramPages(id: String, index: Int, spec: String) = updateProgram(id) { p ->
+        if (index !in p.lines.indices) p
+        else p.copy(lines = p.lines.toMutableList().also { l -> l[index] = l[index].copy(pages = spec.trim()) })
+    }
+
+    fun editProgram(id: String) {
+        editingProgramId = id
+        stack.add(Screen.PROGRAM_EDIT)
+    }
+
+    /** Ouvre le programme : chaque page ciblée (ou chaque fichier) devient une diapo à faire glisser. */
+    fun openProgram(id: String) {
+        val p = programs.firstOrNull { it.id == id } ?: return
+        val lib = library
+        val slides = ArrayList<Pair<Exercise, Int>>()
+        for (l in p.lines) {
+            if (l.isRoutine) {
+                val r = routines.firstOrNull { it.id == l.ref } ?: continue
+                r.items.forEach { ri -> lib.firstOrNull { it.uri == ri.uri }?.let { slides.add(it to -1) } }
+            } else {
+                val e = lib.firstOrNull { it.uri == l.ref } ?: continue
+                val pages = if (e.isPdf && l.pages.isNotBlank()) parsePages(l.pages) else emptyList()
+                if (pages.isEmpty()) slides.add(e to -1) else pages.forEach { slides.add(e to it) }
+            }
+        }
+        if (slides.isEmpty()) return
+        viewerItems = slides.map { it.first }
+        viewerMinutes = slides.map { 0 }
+        viewerPages = slides.map { it.second }
+        viewerAutoAdvance = false
+        viewerStart = 0
+        viewerTitle = p.name
+        stack.add(Screen.VIEWER)
+    }
+
     // ------------------------------------------------------------ temps d'utilisation quotidien
 
     /** Le temps compte tant que l'appli est à l'écran ou que le métronome joue. */
@@ -781,6 +910,7 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
         val l = if (list.any { it.uri == e.uri }) list else listOf(e)
         viewerItems = l
         viewerMinutes = l.map { 0 }
+        viewerPages = emptyList()
         viewerAutoAdvance = false
         viewerStart = l.indexOfFirst { it.uri == e.uri }.coerceAtLeast(0)
         viewerTitle = null
@@ -795,6 +925,7 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
         val items = pairs.map { it.first }
         viewerItems = items
         viewerMinutes = pairs.map { it.second }
+        viewerPages = emptyList()
         viewerAutoAdvance = r.autoAdvance
         viewerStart = start.coerceIn(0, items.lastIndex)
         viewerTitle = r.name
