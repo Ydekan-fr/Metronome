@@ -4,21 +4,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  mac:
-    runs-on: macos-14   # Apple Silicon (M1)
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build Metronome.app
-        working-directory: Metronome
-        run: |
-          chmod +x build_app.sh
-          ./build_app.sh
-          ditto -c -k --keepParent Metronome.app ../Metronome-mac.zip
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Metronome-mac
-          path: Metronome-mac.zip
-
   android:
     runs-on: ubuntu-latest
     steps:
