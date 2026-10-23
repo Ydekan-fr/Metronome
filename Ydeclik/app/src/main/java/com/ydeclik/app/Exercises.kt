@@ -276,21 +276,58 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
     fun addImported(uris: List<Uri>) {
         viewModelScope.launch(Dispatchers.IO) {
             val added = ArrayList<Exercise>()
+            var toFolder = 0
             for (u in uris) {
                 runCatching { cr.takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                 val name = displayName(u)
                 val mime = cr.getType(u) ?: ""
-                added.add(Exercise(u.toString(), name, mime == "application/pdf" || name.endsWith(".pdf", true)))
+                val isPdf = mime == "application/pdf" || name.endsWith(".pdf", true)
+                if (copyToFolder(u, name, mime)) { toFolder++; continue }
+                added.add(Exercise(copyIfDropbox(u, name) ?: u.toString(), name, isPdf))
             }
             withContext(Dispatchers.Main) {
                 val known = imported.map { it.uri }.toSet()
                 imported = imported + added.filter { it.uri !in known }
                 saveImported()
+                if (toFolder > 0) refreshFolder()
             }
         }
     }
 
+    /** Fichier Dropbox + dossier choisi : copie dans ce dossier (visible ensuite par le scan). */
+    private fun copyToFolder(u: Uri, name: String, mime: String): Boolean {
+        if (u.authority?.contains("dropbox", ignoreCase = true) != true) return false
+        val tree = folderUri?.let { Uri.parse(it) } ?: return false
+        return runCatching {
+            val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+            val type = mime.ifBlank { if (name.endsWith(".pdf", true)) "application/pdf" else "application/octet-stream" }
+            val base = name.substringBeforeLast('.', name)
+            val dest = DocumentsContract.createDocument(cr, parent, type, base) ?: return false
+            val ok = cr.openInputStream(u)?.use { input ->
+                cr.openOutputStream(dest)?.use { out -> input.copyTo(out); true } ?: false
+            } ?: false
+            if (!ok) runCatching { DocumentsContract.deleteDocument(cr, dest) }
+            ok
+        }.getOrDefault(false)
+    }
+
+    /** Fichiers Dropbox uniquement : copie locale (hors connexion). Renvoie l'URI de la copie, ou null. */
+    private fun copyIfDropbox(u: Uri, name: String): String? {
+        if (u.authority?.contains("dropbox", ignoreCase = true) != true) return null
+        return runCatching {
+            val dir = java.io.File(app.filesDir, "dropbox").apply { mkdirs() }
+            val safe = name.replace(Regex("[^A-Za-z0-9._ -]"), "_").ifBlank { "fichier" }
+            val f = java.io.File(dir, safe)
+            cr.openInputStream(u)?.use { input -> f.outputStream().use { input.copyTo(it) } } ?: return null
+            Uri.fromFile(f).toString()
+        }.getOrNull()
+    }
+
     fun removeImported(uri: String) {
+        runCatching {
+            val f = Uri.parse(uri).path?.let { java.io.File(it) }
+            if (uri.startsWith("file:") && f != null && f.parentFile?.name == "dropbox") f.delete()
+        }
         imported = imported.filter { it.uri != uri }
         saveImported()
     }
@@ -411,7 +448,11 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
             prefs.edit().remove("folderUri").remove("folderName").apply()
             return
         }
-        runCatching { cr.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        runCatching {
+            cr.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }.onFailure {
+            runCatching { cr.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        }
         folderUri = uri.toString()
         folderName = Uri.decode(uri.lastPathSegment ?: "").substringAfterLast('/').substringAfterLast(':')
         prefs.edit().putString("folderUri", folderUri).putString("folderName", folderName).apply()
