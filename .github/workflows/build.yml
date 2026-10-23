@@ -15,8 +15,20 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.7
+      - name: Clé de signature fixe
+        env:
+          KS_B64: ${{ secrets.YDEKLIK_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/ydeklik.jks"
+            echo "YDEKLIK_KEYSTORE=$RUNNER_TEMP/ydeklik.jks" >> "$GITHUB_ENV"
+          fi
       - name: Build APK
         working-directory: Ydeclik
+        env:
+          YDEKLIK_STORE_PASSWORD: ${{ secrets.YDEKLIK_STORE_PASSWORD }}
+          YDEKLIK_KEY_ALIAS: ${{ secrets.YDEKLIK_KEY_ALIAS }}
+          YDEKLIK_KEY_PASSWORD: ${{ secrets.YDEKLIK_KEY_PASSWORD }}
         run: gradle assembleDebug
       - uses: actions/upload-artifact@v4
         with:
