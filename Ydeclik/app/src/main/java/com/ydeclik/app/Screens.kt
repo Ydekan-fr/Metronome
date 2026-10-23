@@ -303,11 +303,18 @@ fun ExercisesScreen(ex: ExerciseViewModel) {
         }
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Pill(if (ex.folderUri != null) "Dossier : ${ex.folderName.ifBlank { "?" }}" else "+ Dossier (Dropbox…)", on = ex.folderUri != null) {
+            Pill(if (ex.folderUri != null) "Dossier : ${ex.folderName.ifBlank { "?" }}" else "+ Dossier", on = ex.folderUri != null) {
                 if (ex.folderUri != null) folderMenu = true else folderPicker.launch(null)
             }
             if (ex.folderUri != null) Pill("↻ Actualiser") { ex.refreshFolder() }
             TimerPill(ex)
+        }
+        if (ex.folderUri == null) {
+            Text(
+                "« + Dossier » : choisissez un sous-dossier du téléphone (par exemple Documents/Ydeklik), " +
+                    "pas la racine, « Téléchargements » ni Dropbox. Il est relu à chaque ouverture.",
+                fontSize = 11.sp, color = Pal.fg.copy(alpha = 0.55f), modifier = Modifier.padding(top = 4.dp)
+            )
         }
         Row(
             Modifier.fillMaxWidth().padding(vertical = 6.dp),
