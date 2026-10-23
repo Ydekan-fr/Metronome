@@ -14,8 +14,24 @@ android {
         versionCode = 1
         versionName = "1.0"
     }
+    // Clé de signature fixe (fournie par les « Secrets » GitHub) : les mises à jour s'installent par-dessus l'ancienne version.
+    val ksPath = System.getenv("YDEKLIK_KEYSTORE")
+    val useKs = ksPath != null && file(ksPath).exists()
+    if (useKs) {
+        signingConfigs {
+            create("ydeklik") {
+                storeFile = file(ksPath!!)
+                storePassword = System.getenv("YDEKLIK_STORE_PASSWORD")
+                keyAlias = System.getenv("YDEKLIK_KEY_ALIAS")
+                keyPassword = System.getenv("YDEKLIK_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release { isMinifyEnabled = false }
+        debug {
+            if (useKs) signingConfig = signingConfigs.getByName("ydeklik")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
