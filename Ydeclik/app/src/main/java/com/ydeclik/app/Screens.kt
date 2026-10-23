@@ -83,17 +83,19 @@ fun YdeclikApp(vm: MetronomeViewModel, ex: ExerciseViewModel, sl: SetlistViewMod
         }
     }
 
-    // Première utilisation : on demande l'accès aux photos / fichiers du téléphone (une seule fois).
-    val firstPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
+    // Première utilisation : accès aux photos du téléphone, demandé une seule fois, après la demande de notifications.
     val ctxFirst = LocalContext.current
-    LaunchedEffect(Unit) {
+    val firstPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        ctxFirst.getSharedPreferences("ydeclik_ex", Context.MODE_PRIVATE).edit().putBoolean("permAsked", true).apply()
+    }
+    LaunchedEffect(ex.mediaAsk) {
+        if (!ex.mediaAsk) return@LaunchedEffect
         val p = ctxFirst.getSharedPreferences("ydeclik_ex", Context.MODE_PRIVATE)
-        if (!p.getBoolean("permAsked", false)) {
+        if (hasMediaPermission(ctxFirst)) {
             p.edit().putBoolean("permAsked", true).apply()
-            if (!hasMediaPermission(ctxFirst)) {
-                kotlinx.coroutines.delay(2500) // laisse passer la demande de notifications
-                runCatching { firstPerm.launch(mediaPermissions()) }
-            }
+        } else if (!p.getBoolean("permAsked", false)) {
+            kotlinx.coroutines.delay(600)
+            runCatching { firstPerm.launch(mediaPermissions()) }
         }
     }
 

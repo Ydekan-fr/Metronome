@@ -28,7 +28,7 @@ class MainActivity : ComponentActivity() {
     private val sl: SetlistViewModel by viewModels()
 
     private val notificationPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { ex.mediaAsk = true }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,6 +56,8 @@ class MainActivity : ComponentActivity() {
             != PackageManager.PERMISSION_GRANTED
         ) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            ex.mediaAsk = true
         }
         setContent { YdeclikTheme { YdeclikApp(vm, ex, sl) } }
     }

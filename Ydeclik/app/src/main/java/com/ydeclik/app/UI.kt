@@ -651,7 +651,7 @@ fun SettingsDialog(vm: MetronomeViewModel, ex: ExerciseViewModel, onClose: () ->
                 }
                 backupMsg?.let { Text(it, fontSize = 12.sp, color = Accent) }
                 Text(
-                    "Volume : touches du téléphone. Version V19 (Ydeklik)",
+                    "Volume : touches du téléphone. Version V21 (Ydeklik)",
                     fontSize = 10.sp, color = Pal.fg.copy(alpha = 0.4f), modifier = Modifier.padding(top = 6.dp)
                 )
             }
@@ -663,14 +663,23 @@ fun SettingsDialog(vm: MetronomeViewModel, ex: ExerciseViewModel, onClose: () ->
             title = { Text("Restaurer cette sauvegarde ?") },
             text = {
                 Text(
-                    "Les données actuelles seront remplacées. L'application se fermera ensuite : rouvrez-la. " +
+                    "Les données actuelles seront remplacées. L'application redémarrera ensuite d'elle-même. " +
                         "Si les fichiers ne s'ouvrent plus (autre téléphone), utilisez « Relier » dans l'onglet Exercices."
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
                     if (Backup.restore(ctx, json)) {
-                        android.os.Process.killProcess(android.os.Process.myPid())
+                        // Redémarre l'appli toute seule pour relire les données restaurées.
+                        runCatching {
+                            ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)?.let {
+                                it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                                ctx.startActivity(it)
+                            }
+                        }
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            android.os.Process.killProcess(android.os.Process.myPid())
+                        }, 400)
                     } else {
                         backupMsg = "Échec de la restauration."
                         pendingRestore = null

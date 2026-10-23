@@ -158,6 +158,9 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
     /** Affiche la boîte de réglages (accessible depuis le menu). */
     var settingsOpen by mutableStateOf(false)
 
+    /** Passe à vrai quand la demande de notifications est réglée : on peut alors demander l'accès aux photos. */
+    var mediaAsk by mutableStateOf(false)
+
     var viewerItems by mutableStateOf(emptyList<Exercise>()); private set
     var viewerMinutes by mutableStateOf(emptyList<Int>()); private set
     var viewerAutoAdvance by mutableStateOf(false); private set
