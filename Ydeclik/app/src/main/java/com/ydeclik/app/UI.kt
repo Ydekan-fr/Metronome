@@ -221,8 +221,8 @@ fun HoldBox(
                 awaitFirstDown()
                 curPress()
                 val job = scope.launch {
-                    delay(450)
-                    while (true) { curHold(); delay(140) }
+                    delay(600)
+                    while (true) { curHold(); delay(380) }
                 }
                 waitForUpOrCancellation()
                 job.cancel()
@@ -651,7 +651,7 @@ fun SettingsDialog(vm: MetronomeViewModel, ex: ExerciseViewModel, onClose: () ->
                 }
                 backupMsg?.let { Text(it, fontSize = 12.sp, color = Accent) }
                 Text(
-                    "Volume : touches du téléphone. Version V23 (Ydeklik)",
+                    "Volume : touches du téléphone. Version V24 (Ydeklik)",
                     fontSize = 10.sp, color = Pal.fg.copy(alpha = 0.4f), modifier = Modifier.padding(top = 6.dp)
                 )
             }
