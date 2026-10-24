@@ -320,7 +320,9 @@ private fun StatChip(label: String, value: String, modifier: Modifier = Modifier
 }
 
 @Composable
-fun MiniMetronome(vm: MetronomeViewModel, s: ExStats?, onEditFirst: () -> Unit, onEditTarget: () -> Unit) {
+fun MiniMetronome(
+    vm: MetronomeViewModel, s: ExStats?, onEditFirst: () -> Unit, onEditTarget: () -> Unit, onOpenMeter: () -> Unit
+) {
     val bpm = vm.cfg.bpm
     val first = s?.firstBpm
     val last = s?.lastBpm
@@ -342,9 +344,7 @@ fun MiniMetronome(vm: MetronomeViewModel, s: ExStats?, onEditFirst: () -> Unit, 
             )
             StatChip("CIBLE", target?.toString() ?: "—", Modifier.clickable(onClick = onEditTarget))
             Spacer(Modifier.weight(1f))
-            if (first == null) {
-                Text("Appuyez sur ▶", fontSize = 11.sp, color = Pal.fg.copy(alpha = 0.5f))
-            } else {
+            if (first != null) {
                 val delta = bpm - first
                 val pct = if (first > 0) delta * 100 / first else 0
                 val col = when {
@@ -377,6 +377,8 @@ fun MiniMetronome(vm: MetronomeViewModel, s: ExStats?, onEditFirst: () -> Unit, 
                         else Pal.fg.copy(alpha = 0.1f)
                     )
             )
+            Spacer(Modifier.width(8.dp))
+            Pill(vm.cfg.sig.label + " ▾", on = vm.cfg.autoOn) { onOpenMeter() }
             Spacer(Modifier.weight(1f))
             HoldBox({ vm.nudge(-1) }, { vm.step5(-1) }, Modifier.size(44.dp)) { Text("−", fontSize = 26.sp) }
             ScrubNumber(
@@ -406,10 +408,16 @@ fun ViewerScreen(vm: MetronomeViewModel, ex: ExerciseViewModel) {
         return
     }
     val ctx = LocalContext.current
+    // Les réglages de page sont indépendants de l'écran Métronome : on les remet en place en quittant.
+    DisposableEffect(Unit) {
+        vm.enterPageMode()
+        onDispose { vm.leavePageMode() }
+    }
     val pager = rememberPagerState(initialPage = ex.viewerStart.coerceIn(0, items.lastIndex)) { items.size }
     var zoomed by remember { mutableStateOf(false) }
     var showTarget by remember { mutableStateOf(false) }
     var showFirst by remember { mutableStateOf(false) }
+    var showMeter by remember { mutableStateOf(false) }
     val pdfPages = remember { mutableStateMapOf<Int, Int>() }
 
     val page = pager.settledPage
@@ -429,6 +437,8 @@ fun ViewerScreen(vm: MetronomeViewModel, ex: ExerciseViewModel) {
     // Nouvelle page / nouvel exercice : on rappelle le dernier BPM utilisé, puis on autorise l'enregistrement.
     var readyKey by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(key) {
+        // Réglages enregistrés pour cette page, sinon réglage par défaut (120 BPM, 4/4, rien d'autre).
+        vm.applyPageConfig(ex.pageConfig(key) ?: Config())
         if (ex.autoApplyBpm) ex.stats[key]?.lastBpm?.let { vm.setBPM(it) }
         readyKey = key
     }
@@ -515,10 +525,14 @@ fun ViewerScreen(vm: MetronomeViewModel, ex: ExerciseViewModel) {
         }
 
         if (!immersive) {
-            MiniMetronome(vm, stats, onEditFirst = { showFirst = true }, onEditTarget = { showTarget = true })
+            MiniMetronome(vm, stats, onEditFirst = { showFirst = true }, onEditTarget = { showTarget = true },
+                onOpenMeter = { showMeter = true })
         }
     }
 
+    if (showMeter) {
+        PageMeterDialog(vm, onChanged = { ex.savePageConfig(key, vm.cfg) }, onClose = { showMeter = false })
+    }
     if (showTimer) {
         TextPrompt(
             "Minuteur global (minutes, 0 = aucun)", ex.timerMin.toString(), numeric = true,

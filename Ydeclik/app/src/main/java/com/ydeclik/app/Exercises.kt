@@ -129,6 +129,8 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
     var meta by mutableStateOf(emptyMap<String, FileMeta>()); private set
     var routines by mutableStateOf(emptyList<Routine>()); private set
     var programs by mutableStateOf(emptyList<Program>()); private set
+    /** Réglages du métronome (métrique, accents, subdivisions, silence, ajout) par fichier / page de PDF. */
+    var pageCfgs by mutableStateOf(emptyMap<String, String>()); private set
     var editingProgramId by mutableStateOf<String?>(null); private set
     /** Page de PDF imposée pour chaque diapo du lecteur (-1 = libre). Vide hors programme. */
     var viewerPages by mutableStateOf(emptyList<Int>()); private set
@@ -235,6 +237,12 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
             }
         }
         runCatching {
+            prefs.getString("pageCfg", null)?.let { s ->
+                val o = JSONObject(s)
+                pageCfgs = o.keys().asSequence().associateWith { o.getString(it) }
+            }
+        }
+        runCatching {
             prefs.getString("programs", null)?.let { s ->
                 val a = JSONArray(s)
                 programs = List(a.length()) { i ->
@@ -306,6 +314,18 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
             a.put(JSONObject().put("id", r.id).put("name", r.name).put("items", items).put("auto", r.autoAdvance))
         }
         prefs.edit().putString("routines", a.toString()).apply()
+    }
+
+    fun pageConfig(key: String): Config? = runCatching {
+        val o = JSONObject(pageCfgs[key] ?: return null)
+        configFromJson(o)?.copy(autoOn = o.optBoolean("autoOn", false))
+    }.getOrNull()
+
+    fun savePageConfig(key: String, c: Config) {
+        pageCfgs = pageCfgs + (key to c.toJson().put("autoOn", c.autoOn).toString())
+        val o = JSONObject()
+        pageCfgs.forEach { (k, v) -> o.put(k, v) }
+        prefs.edit().putString("pageCfg", o.toString()).apply()
     }
 
     private fun savePrograms() {
@@ -633,6 +653,15 @@ class ExerciseViewModel(private val app: Application) : AndroidViewModel(app) {
             (map[b]?.let { n -> n + k.substring(b.length) } ?: k) to v
         }
         meta = meta.entries.associate { (k, v) -> re(k) to v }
+        pageCfgs = pageCfgs.entries.associate { (k, v) ->
+            val b = baseUri(k)
+            (map[b]?.let { n -> n + k.substring(b.length) } ?: k) to v
+        }
+        run {
+            val o = JSONObject()
+            pageCfgs.forEach { (k, v) -> o.put(k, v) }
+            prefs.edit().putString("pageCfg", o.toString()).apply()
+        }
         routines = routines.map { r -> r.copy(items = r.items.map { it.copy(uri = re(it.uri)) }) }
         programs = programs.map { p ->
             p.copy(lines = p.lines.map { if (it.isRoutine) it else it.copy(ref = re(it.ref)) })

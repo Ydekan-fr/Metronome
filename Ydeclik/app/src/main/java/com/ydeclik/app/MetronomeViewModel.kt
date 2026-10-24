@@ -107,13 +107,28 @@ class MetronomeViewModel(private val app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------ config plumbing
 
+    /** Configuration de l'écran Métronome, mise de côté pendant qu'on est dans un exercice (réglages propres à la page). */
+    private var mainCfg: Config? = null
+
+    fun enterPageMode() { if (mainCfg == null) mainCfg = cfg }
+
+    fun leavePageMode() {
+        val m = mainCfg ?: return
+        mainCfg = null
+        update(m.copy(bpm = cfg.bpm))   // le BPM reste commun aux deux écrans
+    }
+
     private fun update(c: Config) {
         cfg = c
         engine.cfg.set(c)
-        prefs.edit().putString("cfg", c.toJson().toString()).apply()
+        val saved = mainCfg?.copy(bpm = c.bpm) ?: c
+        prefs.edit().putString("cfg", saved.toJson().toString()).apply()
     }
 
     // ------------------------------------------------------------ transport
+
+    /** Applique la configuration enregistrée pour une page (ou la configuration par défaut). */
+    fun applyPageConfig(c: Config) { if (c.isConsistent()) update(c) }
 
     fun toggle() { if (isPlaying) stop() else start() }
 
